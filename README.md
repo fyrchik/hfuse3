@@ -97,7 +97,11 @@ If you run into any problems or bugs, please report the issue on [Github][1]
 
 ## RoadMap
 
-I would like to create the following examples:
+1. Reimplement all examples from libfuse repository in Haskell
+
+2. Implement remaning operations in FuseOperations
+
+3. I would like to create the following examples:
 
 - MemoryFS.hs := In-memory file system
 - VBoxFS.hs := Mount VirtualBox disks as filesystem
