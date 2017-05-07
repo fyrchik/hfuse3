@@ -15,7 +15,7 @@ This is a fork of this binding https://github.com/m15k/hfuse to the 2nd version 
 - Programs using HFuse should be compiled with -threaded.
 - This now works for base 4.6+
 
-Following wes not tested with libfuse3
+Following was not tested with libfuse3:
 - Added build options support for FreeBSD (contribution by https://github.com/pesco)
 - MacFUSE should also work (https://github.com/mwotton/hfuse)
 - [OSXFuse](https://osxfuse.github.io/) also works (https://github.com/edyu/hfuse)
@@ -25,35 +25,15 @@ Following wes not tested with libfuse3
 All of the usual methods for installation will be supported.
 For Mac OS X, you must install [OSXFuse](https://osxfuse.github.io/) first.
 
-**Installation via Hackage**
-
-```
-cabal install hfuse
-```
-
 **Installation for development**
 
-Can either be handled via [Hackage](http://hackage.haskell.org/packages/search?terms=hfuse)
-
-```
-cabal unpack hfuse
-cd HFuse-0.2.4.4
-cabal sandbox init
-cabal install --only-dependencies
-cabal install -fdeveloper
-```
-
-Or the library can be installed via Github [repo][2]
+Can be installed via Github [repo][2]
 
 ```
 git clone git://github.com/fyrchik/hfuse
 cd hfuse
 stack build
 ```
-
-**NOTE!**
-
-* To use the sandboxes feature in Cabal your version must be higher than 1.18. *highly recommended*
 
 ## Development
 
@@ -101,7 +81,11 @@ If you run into any problems or bugs, please report the issue on [Github][1]
 
 2. Implement remaning operations in FuseOperations
 
-3. I would like to create the following examples:
+3. Implement low_level bindings
+
+4. Perform moderate refactoring to split all code into separate modules
+
+5. I would like to create the following examples:
 
 - MemoryFS.hs := In-memory file system
 - VBoxFS.hs := Mount VirtualBox disks as filesystem
