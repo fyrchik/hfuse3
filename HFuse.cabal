@@ -1,5 +1,5 @@
 Name:                   HFuse
-Version:                0.2.4.4
+Version:                0.3
 License:                BSD3
 License-File:           LICENSE
 Author:                 Jeremy Bobbio
@@ -11,7 +11,7 @@ Category:               System
 Stability:              Experimental
 Cabal-Version:          >= 1.10
 Build-Type:             Simple
-Extra-source-files:     
+Extra-source-files:
         CHANGELOG.md
         README.md
 
@@ -24,9 +24,11 @@ Library
   Default-Extensions:             ForeignFunctionInterface ScopedTypeVariables EmptyDataDecls
   Includes:               dirent.h, fuse.h, fcntl.h
   Include-Dirs:           /usr/include, /usr/local/include, .
+
+  CC-Options:           "-DFUSE_USE_VERSION=30"
+
   if os(darwin)
       CC-Options:           "-DMACFUSE"
-      CC-Options:           "-DFUSE_USE_VERSION=26"
       Include-Dirs:           /usr/local/include/osxfuse
   else
       if os(freebsd)
@@ -38,7 +40,7 @@ Library
   if os(darwin)
       Extra-Libraries:        osxfuse
   else
-      Extra-Libraries:        fuse
+      Extra-Libraries:        fuse3
   Extra-Lib-Dirs:         /usr/local/lib
   CC-Options:             "-D_FILE_OFFSET_BITS=64"
   Default-Language:       Haskell2010

@@ -4,6 +4,8 @@ Filesystem in Userspace ("FUSE") makes it possible to implement a filesystem as 
 
 This library is the Haskell binding to this library.
 
+This is a fork of this binding https://github.com/m15k/hfuse to the 2nd version of libfuse
+
 ## License
 
 [BSD 3-Clause](./LICENSE)
@@ -12,6 +14,8 @@ This library is the Haskell binding to this library.
 
 - Programs using HFuse should be compiled with -threaded.
 - This now works for base 4.6+
+
+Following wes not tested with libfuse3
 - Added build options support for FreeBSD (contribution by https://github.com/pesco)
 - MacFUSE should also work (https://github.com/mwotton/hfuse)
 - [OSXFuse](https://osxfuse.github.io/) also works (https://github.com/edyu/hfuse)
@@ -42,11 +46,9 @@ cabal install -fdeveloper
 Or the library can be installed via Github [repo][2]
 
 ```
-git clone git://github.com/m15k/hfuse
+git clone git://github.com/fyrchik/hfuse
 cd hfuse
-cabal sandbox init
-cabal install --only-dependencies
-cabal install -fdeveloper
+stack build
 ```
 
 **NOTE!**
@@ -57,7 +59,7 @@ cabal install -fdeveloper
 
 To get a feel for HFuse, there are a number of example applications.  They can be built by supplying the `-fdeveloper` [configuration flag][3] to Cabal.
 
-> git clone https://github.com/m15k/hfuse
+> git clone https://github.com/fyrchik/hfuse
 
 ## Examples
 

@@ -16,7 +16,7 @@ main = fuseMain helloFSOps defaultExceptionHandler
 helloFSOps :: FuseOperations HT
 helloFSOps = defaultFuseOps { fuseGetFileStat = helloGetFileStat
                             , fuseOpen        = helloOpen
-                            , fuseRead        = helloRead 
+                            , fuseRead        = helloRead
                             , fuseOpenDirectory = helloOpenDirectory
                             , fuseReadDirectory = helloReadDirectory
                             , fuseGetFileSystemStats = helloGetFileSystemStats

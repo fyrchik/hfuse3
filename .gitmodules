@@ -1,0 +1,3 @@
+[submodule "extlib/libfuse"]
+	path = extlib/libfuse
+	url = https://github.com/libfuse/libfuse.git

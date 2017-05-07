@@ -3,7 +3,7 @@
 -- Module      :  System.Fuse
 -- Copyright   :  (c) Jérémy Bobbio, Taru Karttunen
 -- License     :  BSD-style
--- 
+--
 -- Maintainer  :  Montez Fitzpatrick
 -- Stability   :  experimental
 -- Portability :  GHC 6.4-7.8.2
@@ -83,7 +83,7 @@ import System.IO.Error (catch,ioeGetErrorString)
 -- TODO: implement binding to fuse_invalidate
 -- TODO: bind fuse_*xattr
 
-#define FUSE_USE_VERSION 26
+#define FUSE_USE_VERSION 30
 
 #if defined MACFUSE || defined __FreeBSD__
 #include <sys/mount.h>
@@ -93,6 +93,7 @@ import System.IO.Error (catch,ioeGetErrorString)
 
 #include <dirent.h>
 #include <fuse.h>
+#include <fuse3/fuse_lowlevel.h> -- fuse_parse_cmdline
 #include <fcntl.h>
 
 {- $intro
@@ -454,32 +455,33 @@ withFuseArgs prog args f =
                        finally (f fuseArgs)
                                (fuse_opt_free_args fuseArgs))))
 
-withStructFuse :: forall e fh b. Exception e => Ptr CFuseChan -> Ptr CFuseArgs -> FuseOperations fh -> (e -> IO Errno) -> (Ptr CStructFuse -> IO b) -> IO b
-withStructFuse pFuseChan pArgs ops handler f =
+withStructFuse :: forall e fh b. Exception e
+               => Ptr CFuseArgs
+               -> FuseOperations fh
+               -> (e -> IO Errno)
+               -> (Ptr CStructFuse -> IO b)
+               -> IO b
+withStructFuse pArgs ops handler f =
     allocaBytes (#size struct fuse_operations) $ \ pOps -> do
       bzero pOps (#size struct fuse_operations)
       mkGetAttr    wrapGetAttr    >>= (#poke struct fuse_operations, getattr)    pOps
-      mkReadLink   wrapReadLink   >>= (#poke struct fuse_operations, readlink)   pOps 
-      -- getdir is deprecated and thus unsupported
-      (#poke struct fuse_operations, getdir)    pOps nullPtr
-      mkMkNod      wrapMkNod      >>= (#poke struct fuse_operations, mknod)      pOps 
-      mkMkDir      wrapMkDir      >>= (#poke struct fuse_operations, mkdir)      pOps 
-      mkUnlink     wrapUnlink     >>= (#poke struct fuse_operations, unlink)     pOps 
-      mkRmDir      wrapRmDir      >>= (#poke struct fuse_operations, rmdir)      pOps 
-      mkSymLink    wrapSymLink    >>= (#poke struct fuse_operations, symlink)    pOps 
-      mkRename     wrapRename     >>= (#poke struct fuse_operations, rename)     pOps 
-      mkLink       wrapLink       >>= (#poke struct fuse_operations, link)       pOps 
-      mkChMod      wrapChMod      >>= (#poke struct fuse_operations, chmod)      pOps 
-      mkChOwn      wrapChOwn      >>= (#poke struct fuse_operations, chown)      pOps 
-      mkTruncate   wrapTruncate   >>= (#poke struct fuse_operations, truncate)   pOps 
-      -- TODO: Deprecated, use utimens() instead.
-      mkUTime      wrapUTime      >>= (#poke struct fuse_operations, utime)      pOps 
-      mkOpen       wrapOpen       >>= (#poke struct fuse_operations, open)       pOps 
-      mkRead       wrapRead       >>= (#poke struct fuse_operations, read)       pOps 
-      mkWrite      wrapWrite      >>= (#poke struct fuse_operations, write)      pOps 
+      mkReadLink   wrapReadLink   >>= (#poke struct fuse_operations, readlink)   pOps
+      mkMkNod      wrapMkNod      >>= (#poke struct fuse_operations, mknod)      pOps
+      mkMkDir      wrapMkDir      >>= (#poke struct fuse_operations, mkdir)      pOps
+      mkUnlink     wrapUnlink     >>= (#poke struct fuse_operations, unlink)     pOps
+      mkRmDir      wrapRmDir      >>= (#poke struct fuse_operations, rmdir)      pOps
+      mkSymLink    wrapSymLink    >>= (#poke struct fuse_operations, symlink)    pOps
+      mkRename     wrapRename     >>= (#poke struct fuse_operations, rename)     pOps
+      mkLink       wrapLink       >>= (#poke struct fuse_operations, link)       pOps
+      mkChMod      wrapChMod      >>= (#poke struct fuse_operations, chmod)      pOps
+      mkChOwn      wrapChOwn      >>= (#poke struct fuse_operations, chown)      pOps
+      mkTruncate   wrapTruncate   >>= (#poke struct fuse_operations, truncate)   pOps
+      mkOpen       wrapOpen       >>= (#poke struct fuse_operations, open)       pOps
+      mkRead       wrapRead       >>= (#poke struct fuse_operations, read)       pOps
+      mkWrite      wrapWrite      >>= (#poke struct fuse_operations, write)      pOps
       mkStatFS     wrapStatFS     >>= (#poke struct fuse_operations, statfs)     pOps
       mkFlush      wrapFlush      >>= (#poke struct fuse_operations, flush)      pOps
-      mkRelease    wrapRelease    >>= (#poke struct fuse_operations, release)    pOps 
+      mkRelease    wrapRelease    >>= (#poke struct fuse_operations, release)    pOps
       mkFSync      wrapFSync      >>= (#poke struct fuse_operations, fsync)      pOps
       -- TODO: Implement these
       (#poke struct fuse_operations, setxattr)    pOps nullPtr
@@ -490,12 +492,22 @@ withStructFuse pFuseChan pArgs ops handler f =
       mkReadDir    wrapReadDir    >>= (#poke struct fuse_operations, readdir)    pOps
       mkReleaseDir wrapReleaseDir >>= (#poke struct fuse_operations, releasedir) pOps
       mkFSyncDir   wrapFSyncDir   >>= (#poke struct fuse_operations, fsyncdir)   pOps
-#if FUSE_MINOR_VERSION > 4
       mkAccess     wrapAccess     >>= (#poke struct fuse_operations, access)     pOps
-#endif
       mkInit       wrapInit       >>= (#poke struct fuse_operations, init)       pOps
       mkDestroy    wrapDestroy    >>= (#poke struct fuse_operations, destroy)    pOps
-      structFuse <- fuse_new pFuseChan pArgs pOps (#size struct fuse_operations) nullPtr 
+      -- TODO: Implement these
+      (#poke struct fuse_operations, create)    pOps nullPtr
+      (#poke struct fuse_operations, lock)      pOps nullPtr
+      (#poke struct fuse_operations, utimens)   pOps nullPtr
+      (#poke struct fuse_operations, bmap)      pOps nullPtr
+      (#poke struct fuse_operations, ioctl)     pOps nullPtr
+      (#poke struct fuse_operations, poll)      pOps nullPtr
+      (#poke struct fuse_operations, write_buf) pOps nullPtr
+      (#poke struct fuse_operations, read_buf)  pOps nullPtr
+      (#poke struct fuse_operations, flock)     pOps nullPtr
+      (#poke struct fuse_operations, fallocate) pOps nullPtr
+
+      structFuse <- fuse_new pArgs pOps (#size struct fuse_operations) nullPtr
       if structFuse == nullPtr
         then fail ""
         else E.finally (f structFuse)
@@ -552,7 +564,7 @@ withStructFuse pFuseChan pArgs ops handler f =
                  (Errno errno) <- (fuseCreateSymbolicLink ops) source destination
                  return (- errno)
           wrapRename :: CRename
-          wrapRename pOld pNew = handle fuseHandler $
+          wrapRename pOld pNew _ = handle fuseHandler $
               do old <- peekCString pOld
                  new <- peekCString pNew
                  (Errno errno) <- (fuseRename ops) old new
@@ -578,14 +590,6 @@ withStructFuse pFuseChan pArgs ops handler f =
               do filePath <- peekCString pFilePath
                  (Errno errno) <- (fuseSetFileSize ops) filePath off
                  return (- errno)
-          wrapUTime :: CUTime
-          wrapUTime pFilePath pUTimBuf = handle fuseHandler $
-              do filePath <- peekCString pFilePath
-                 accessTime <- (#peek struct utimbuf, actime) pUTimBuf
-                 modificationTime <- (#peek struct utimbuf, modtime) pUTimBuf
-                 (Errno errno) <- (fuseSetFileTimes ops) filePath
-                                      accessTime modificationTime
-                 return (- errno)
           wrapOpen :: COpen
           wrapOpen pFilePath pFuseFileInfo = handle fuseHandler $
               do filePath <- peekCString pFilePath
@@ -593,7 +597,7 @@ withStructFuse pFuseChan pArgs ops handler f =
                  let append    = (#const O_APPEND)   .&. flags == (#const O_APPEND)
                      noctty    = (#const O_NOCTTY)   .&. flags == (#const O_NOCTTY)
                      nonBlock  = (#const O_NONBLOCK) .&. flags == (#const O_NONBLOCK)
-                     how | (#const O_RDWR) .&. flags == (#const O_RDWR) = ReadWrite
+                     how | (#const O_RDWR)   .&. flags == (#const O_RDWR) = ReadWrite
                          | (#const O_WRONLY) .&. flags == (#const O_WRONLY) = WriteOnly
                          | otherwise = ReadOnly
                      openFileFlags = OpenFileFlags { append = append
@@ -617,7 +621,7 @@ withStructFuse pFuseChan pArgs ops handler f =
                  eitherRead <- (fuseRead ops) filePath cVal bufSiz off
                  case eitherRead of
                    Left (Errno errno) -> return (- errno)
-                   Right bytes  -> 
+                   Right bytes  ->
                      do let len = fromIntegral bufSiz `min` B.length bytes
                         bsToBuf pBuf bytes len
                         return (fromIntegral len)
@@ -680,7 +684,7 @@ withStructFuse pFuseChan pArgs ops handler f =
                  return (- errno)
 
           wrapReadDir :: CReadDir
-          wrapReadDir pFilePath pBuf pFillDir off pFuseFileInfo =
+          wrapReadDir pFilePath pBuf pFillDir off pFuseFileInfo _ =
             handle fuseHandler $ do
               filePath <- peekCString pFilePath
               let fillDir = mkFillDir pFillDir
@@ -689,7 +693,7 @@ withStructFuse pFuseChan pArgs ops handler f =
                     withCString fileName $ \ pFileName ->
                       allocaBytes (#size struct stat) $ \ pFileStat ->
                         do fileStatToCStat fileStat pFileStat
-                           fillDir pBuf pFileName pFileStat 0
+                           fillDir pBuf pFileName pFileStat 0 0
                            -- Ignoring return value of pFillDir, namely 1 if
                            -- pBuff is full.
                            return ()
@@ -735,25 +739,22 @@ defaultExceptionHandler e = hPutStrLn stderr (show e) >> return eFAULT
 --
 -- The multithreaded runtime will be used regardless of the threading flag!
 -- See the comment in fuse_session_exit for why.
+-- TODO: refactor return type
 fuseParseCommandLine :: Ptr CFuseArgs -> IO (Maybe (Maybe String, Bool, Bool))
-fuseParseCommandLine pArgs = 
-    alloca (\pMountPt -> 
-        alloca (\pMultiThreaded ->
-            alloca (\pFG ->
-                do poke pMultiThreaded 0
-                   poke pFG 0
-                   retval <- fuse_parse_cmdline pArgs pMountPt pMultiThreaded pFG
-                   if retval == 0
-                     then do cMountPt <- peek pMountPt
-                             mountPt <- if cMountPt /= nullPtr
-                                          then do a <- peekCString cMountPt
-                                                  free cMountPt
-                                                  return $ Just a
-                                          else return $ Nothing
-                             multiThreaded <- peek pMultiThreaded
-                             foreground <- peek pFG
-                             return $ Just (mountPt, multiThreaded == 1, foreground == 1)
-                     else return Nothing)))
+fuseParseCommandLine pArgs = do
+    allocaBytes (#size struct fuse_cmdline_opts) $ \pOpts ->
+        do retval <- fuse_parse_cmdline pArgs pOpts
+           if retval == 0
+               then do cMountPt <- (#peek struct fuse_cmdline_opts, mountpoint) pOpts
+                       mountPt  <- if cMountPt /= nullPtr
+                                     then do a <- peekCString cMountPt
+                                             free cMountPt
+                                             return $ Just a
+                                     else return $ Nothing
+                       singleThreaded <- (#peek struct fuse_cmdline_opts, singlethread) pOpts
+                       foreground     <- (#peek struct fuse_cmdline_opts, foreground)   pOpts
+                       return $ Just (mountPt, (singleThreaded :: Int) == 0, (foreground :: Int) == 1)
+               else return Nothing
 
 -- haskell version of daemon(2)
 -- Mimic's daemon()s use of _exit() instead of exit(); we depend on this in fuseMainReal,
@@ -787,15 +788,13 @@ withSignalHandlers exitHandler f =
 -- Mounts the filesystem, forks, and then starts fuse
 fuseMainReal foreground ops handler pArgs mountPt =
     withCString mountPt (\cMountPt ->
-      do pFuseChan <- fuse_mount cMountPt pArgs
-         if pFuseChan == nullPtr
-           then exitFailure -- fuse will print an error message why this happened
-           else (withStructFuse pFuseChan pArgs ops handler (\pFuse ->
-                  E.finally 
-                     (if foreground -- finally ready to fork
-                       then changeWorkingDirectory "/" >> (procMain pFuse)
-                       else daemon (procMain pFuse))
-                     (fuse_unmount cMountPt pFuseChan))))
+      do withStructFuse pArgs ops handler (\pFuse -> do
+          fuse_mount pFuse cMountPt
+          E.finally
+               (if foreground -- finally ready to fork
+                 then changeWorkingDirectory "/" >> (procMain pFuse)
+                 else daemon (procMain pFuse))
+               (fuse_unmount pFuse)))
 
     -- here, we're finally inside the daemon process, we can run the main loop
     where procMain pFuse = do session <- fuse_get_session pFuse
@@ -805,7 +804,8 @@ fuseMainReal foreground ops handler pArgs mountPt =
                               -- recv() call to finish with EINTR when signals arrive.
                               -- This doesn't happen with GHC's signal handling in place.
                               withSignalHandlers (fuse_session_exit session) $
-                                 do retVal <- fuse_loop_mt pFuse
+                                 do retVal <- fuse_loop_mt pFuse 0
+                                    -- TODO: add opt clone_fd ^
                                     if retVal == 1 
                                       then exitWith ExitSuccess
                                       else exitFailure
@@ -834,6 +834,7 @@ fuseMainReal foreground ops handler pArgs mountPt =
 --   * registers the operations ;
 --
 --   * calls FUSE event loop.
+
 fuseMain :: Exception e => FuseOperations fh -> (e -> IO Errno) -> IO ()
 fuseMain ops handler = do
     -- this used to be implemented using libfuse's fuse_main. Doing this will fork()
@@ -882,16 +883,16 @@ catch = catchIOError
 
 ---
 -- exported C called from Haskell
----  
+---
 
 data CFuseArgs -- struct fuse_args
 
 data CFuseChan -- struct fuse_chan
 foreign import ccall safe "fuse.h fuse_mount"
-    fuse_mount :: CString -> Ptr CFuseArgs -> IO (Ptr CFuseChan)
+    fuse_mount :: Ptr CStructFuse -> CString -> IO CInt
 
 foreign import ccall safe "fuse.h fuse_unmount"
-    fuse_unmount :: CString -> Ptr CFuseChan -> IO ()
+    fuse_unmount :: Ptr CStructFuse -> IO ()
 
 data CFuseSession -- struct fuse_session
 foreign import ccall safe "fuse.h fuse_get_session"
@@ -901,18 +902,19 @@ foreign import ccall safe "fuse.h fuse_session_exit"
     fuse_session_exit :: Ptr CFuseSession -> IO ()
 
 foreign import ccall safe "fuse.h fuse_set_signal_handlers"
-    fuse_set_signal_handlers :: Ptr CFuseSession -> IO Int
+    fuse_set_signal_handlers :: Ptr CFuseSession -> IO CInt
 
 foreign import ccall safe "fuse.h fuse_remove_signal_handlers"
     fuse_remove_signal_handlers :: Ptr CFuseSession -> IO ()
 
-foreign import ccall safe "fuse.h fuse_parse_cmdline"
-    fuse_parse_cmdline :: Ptr CFuseArgs -> Ptr CString -> Ptr Int -> Ptr Int -> IO Int
+data CFuseCmdlineOpts -- struct fuse_cmdline_opts
+foreign import ccall safe "fuse3/fuse_lowlevel.h fuse_parse_cmdline"
+    fuse_parse_cmdline :: Ptr CFuseArgs -> Ptr CFuseCmdlineOpts -> IO CInt
 
 data CStructFuse -- struct fuse
 data CFuseOperations -- struct fuse_operations
 foreign import ccall safe "fuse.h fuse_new"
-    fuse_new :: Ptr CFuseChan -> Ptr CFuseArgs -> Ptr CFuseOperations -> Int -> Ptr () -> IO (Ptr CStructFuse)
+    fuse_new :: Ptr CFuseArgs -> Ptr CFuseOperations -> CSize -> Ptr () -> IO (Ptr CStructFuse)
 
 foreign import ccall safe "fuse.h fuse_destroy"
     fuse_destroy :: Ptr CStructFuse -> IO ()
@@ -921,7 +923,7 @@ foreign import ccall safe "fuse.h fuse_opt_free_args"
     fuse_opt_free_args :: Ptr CFuseArgs -> IO ()
 
 foreign import ccall safe "fuse.h fuse_loop_mt"
-    fuse_loop_mt :: Ptr CStructFuse -> IO Int
+    fuse_loop_mt :: Ptr CStructFuse -> CInt -> IO CInt
 
 data CFuseContext
 foreign import ccall safe "fuse.h fuse_get_context"
@@ -963,7 +965,7 @@ type CSymLink = CString -> CString -> IO CInt
 foreign import ccall safe "wrapper"
     mkSymLink :: CSymLink -> IO (FunPtr CSymLink)
 
-type CRename = CString -> CString -> IO CInt
+type CRename = CString -> CString -> CUInt -> IO CInt
 foreign import ccall safe "wrapper"
     mkRename :: CRename -> IO (FunPtr CRename)
 
@@ -982,11 +984,6 @@ foreign import ccall safe "wrapper"
 type CTruncate = CString -> COff -> IO CInt
 foreign import ccall safe "wrapper"
     mkTruncate :: CTruncate -> IO (FunPtr CTruncate)
-
-data CUTimBuf -- struct utimbuf
-type CUTime = CString -> Ptr CUTimBuf -> IO CInt
-foreign import ccall safe "wrapper"
-    mkUTime :: CUTime -> IO (FunPtr CUTime)
 
 type COpen = CString -> Ptr CFuseFileInfo -> IO CInt
 foreign import ccall safe "wrapper"
@@ -1024,7 +1021,7 @@ foreign import ccall safe "wrapper"
     mkOpenDir :: COpenDir -> IO (FunPtr COpenDir)
 
 type CReadDir = CString -> Ptr CFillDirBuf -> FunPtr CFillDir -> COff
-             -> Ptr CFuseFileInfo -> IO CInt
+             -> Ptr CFuseFileInfo -> CUInt -> IO CInt
 foreign import ccall safe "wrapper"
     mkReadDir :: CReadDir -> IO (FunPtr CReadDir)
 
@@ -1078,7 +1075,7 @@ foreign import ccall safe "dynamic"
     mkDirFil :: FunPtr CDirFil -> CDirFil
 
 data CFillDirBuf -- void
-type CFillDir = Ptr CFillDirBuf -> CString -> Ptr CStat -> COff -> IO CInt
+type CFillDir = Ptr CFillDirBuf -> CString -> Ptr CStat -> COff -> CUInt -> IO CInt
 
 foreign import ccall safe "dynamic"
     mkFillDir :: FunPtr CFillDir -> CFillDir
