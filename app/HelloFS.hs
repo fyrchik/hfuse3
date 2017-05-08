@@ -37,12 +37,11 @@ instance Storable Options where
         poke (p `plusPtr` sizeOf (nullPtr :: CString)) c
 
 main :: IO ()
-main = print 1 >> fuseMainOpts helloFSOps defaultExceptionHandler
-         ( [ FuseOpt "--name=%s" 0 1
-           , FuseOpt "--contents=%s" (8) 1]
-         , Options nullPtr nullPtr)
+main = fuseMainOpts helloFSOps defaultExceptionHandler
+           [ FuseOpt "--name" FuseOptString
+           , FuseOpt "--contents" FuseOptString]
 
-helloFSOps :: Options -> FuseOperations HT
+helloFSOps :: FuseOptResult -> FuseOperations HT
 helloFSOps userData =
     defaultFuseOps { fuseGetFileStat = helloGetFileStat
                    , fuseOpen        = helloOpen
@@ -54,9 +53,12 @@ helloFSOps userData =
                    , fuseDestroy = helloDestroy
                    }
 
-helloInit :: Options -> IO (Ptr ())
+helloInit :: FuseOptResult -> IO (Ptr ())
 helloInit userData = do
-    p <- new userData
+    let a x = case x of { Just (Left s) -> newCString s ; _ -> return nullPtr }
+    pn <- a $ lookup "--name" userData
+    pc <- a $ lookup "--contents" userData
+    p <- new $ Options pn pc
     return $ castPtr p
 
 helloDestroy :: Ptr () -> IO ()
@@ -156,8 +158,6 @@ helloReadDirectory :: FilePath -> IO (Either Errno [(FilePath, FileStat)])
 helloReadDirectory "/" = do
     ctx <- getFuseContext
     n <- getPrivateData ctx >>= _getName
-    print "lel"
-    print n
     return $ Right [(".",  dirStat ctx)
                    ,("..", dirStat ctx)
                    ,(n, fileStat ctx)

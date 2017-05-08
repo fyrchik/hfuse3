@@ -33,10 +33,7 @@ module System.Fuse
     , FuseOperations(..)
     , defaultFuseOps
     , fuseMain -- :: FuseOperations fh -> (Exception -> IO Errno) -> IO ()
-    , fuseMainOpts -- :: Storable a  => FuseOperations fh -> (Exception -> IO Errno) -> OptSpec a -> IO ()
-    , fM -- just testing, for later use
-    , fuse_get_context
-    , fuse_main
+    , fuseMainOpts -- :: Storable a  => FuseOperations fh -> (Exception -> IO Errno) -> [FuseOpt] -> IO ()
     , fuseRun -- :: String -> [String] -> FuseOperations fh -> (Exception -> IO Errno) -> IO ()
     , defaultExceptionHandler -- :: Exception -> IO Errno
       -- * Operations datatypes
@@ -290,33 +287,18 @@ foreign import ccall "fuse.h fuse_main_real"
 
 fuse_main argc pArgv pOps p = fuse_main_real argc pArgv pOps (#size struct fuse_operations) p
 
-fM :: (Exception e, Storable a) => FuseOperations fh -> (e -> IO Errno) -> OptSpec a -> IO ()
-fM ops handler opts = do
-    prog <- getProgName
-    args <- getArgs
-    withFuseOps ops handler (\pOps ->
-        withFuseArgs prog args (\pArgs -> do
-           (res, ret) <- fuseOptParse pArgs opts
-           p <- new res
-           let argv = prog : args
-               argc = length args
-           withMany withCString argv (\pArgs ->
-               withArray pArgs (\pArgv -> do
-                   fuse_main_real argc pArgv pOps (#size struct fuse_operations) p
-                   return ()))))
-
 fuseMain :: Exception e => FuseOperations fh -> (e -> IO Errno) -> IO ()
 fuseMain ops handler = do
     -- this used to be implemented using libfuse's fuse_main. Doing this will fork()
     -- from C behind the GHC runtime's back, which deadlocks in GHC 6.8.
     -- Instead, we reimplement fuse_main in Haskell using the forkProcess and the
     -- lower-level fuse_new/fuse_loop_mt API.
-    fuseMainOpts (const ops) handler noOpt
+    fuseMainOpts (const ops) handler []
 
-fuseMainOpts :: (Exception e, Storable a)
-             => (a -> FuseOperations fh)
+fuseMainOpts :: Exception e
+             => (FuseOptResult -> FuseOperations fh)
              -> (e -> IO Errno)
-             -> OptSpec a
+             -> [FuseOpt]
              -> IO ()
 fuseMainOpts ops handler opts = do
     prog <- getProgName
@@ -324,11 +306,13 @@ fuseMainOpts ops handler opts = do
     fuseRunOpts prog args ops handler opts
 
 fuseRun :: String -> [String] -> Exception e => FuseOperations fh -> (e -> IO Errno) -> IO ()
-fuseRun prog args ops handler = fuseRunOpts prog args (const ops) handler noOpt
+fuseRun prog args ops handler = fuseRunOpts prog args (const ops) handler []
 
 fuseRunOpts :: String -> [String]
-            -> (Exception e, Storable a) => (a -> FuseOperations fh) -> (e -> IO Errno)
-            -> OptSpec a -> IO ()
+            -> Exception e
+            => (FuseOptResult -> FuseOperations fh)
+            -> (e -> IO Errno)
+            -> [FuseOpt] -> IO ()
 fuseRunOpts prog args ops handler opts =
     catch
       (withFuseArgs prog args (\pArgs -> do
@@ -342,21 +326,6 @@ fuseRunOpts prog args ops handler opts =
                     return ()))
       ((\errStr -> unless (null errStr) (putStrLn errStr) >> exitFailure) . ioeGetErrorString)
 
-
-
---fuse_opt_parse :: Ptr CFuseArgs -> Ptr () -> Ptr FuseOpt -> Ptr () -> IO CInt
--- | 'fuseOptParse' parses
--- 2nd and 3rd arguments must correspond to each other, because
--- offset in 'FuseOpt' is used to determine location of opt in Storable instance
--- TODO: think on better interface AND implement error handling
-fuseOptParse :: Storable a => Ptr CFuseArgs -> OptSpec a -> IO (a, CInt)
-fuseOptParse _     ([],res)    = return (res, 0)
-fuseOptParse pArgs (opts,res)  = do
-    withArray0 fuseOptEnd opts $ \pOpts -> do
-        with res $ \pData -> do
-            ret <- fuse_opt_parse pArgs pData pOpts nullPtr
-            res <- peek pData
-            return (res, ret)
 
 -----------------------------------------------------------------------------
 -- C land
@@ -382,9 +351,6 @@ foreign import ccall safe "fuse.h fuse_set_signal_handlers"
 
 foreign import ccall safe "fuse.h fuse_remove_signal_handlers"
     fuse_remove_signal_handlers :: Ptr CFuseSession -> IO ()
-
-foreign import ccall safe "fuse3/fuse_opt.h fuse_opt_parse"
-    fuse_opt_parse :: Ptr CFuseArgs -> Ptr a -> Ptr FuseOpt -> Ptr () -> IO CInt
 
 foreign import ccall safe "fuse3/fuse_lowlevel.h fuse_parse_cmdline"
     fuse_parse_cmdline :: Ptr CFuseArgs -> Ptr CFuseCmdlineOpts -> IO CInt
