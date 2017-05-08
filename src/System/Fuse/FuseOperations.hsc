@@ -1,12 +1,12 @@
 module System.Fuse.FuseOperations
-    ( EntryType(..)
+    ( -- * Classes
+      EntryType(..)
     , FileStat(..)
     , FileSystemStats(..)
     , FuseOperations(..)
     , SyncType(..)
 
-    , CStat
-
+    -- * Functions
     , defaultFuseOps
     , defaultExceptionHandler
     , fileStatToCStat
@@ -272,11 +272,12 @@ defaultFuseOps =
                    , fuseDestroy = return ()
                    }
 
--- Allocate fuse_operations struct
+-- | 'withFuseOps' allocate fuse_operations struct and invokes
+-- callback on pointer.
 withFuseOps :: forall e fh b. Exception e
-            => FuseOperations fh
-            -> (e -> IO Errno)
-            -> (Ptr CFuseOperations -> IO b)
+            => FuseOperations fh             -- ^ FuseOperations structure
+            -> (e -> IO Errno)               -- ^ error handler
+            -> (Ptr CFuseOperations -> IO b) -- ^ callback to invoke
             -> IO b
 withFuseOps ops handler f =
     -- TODO: figure out if we should think about alignment here
