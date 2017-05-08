@@ -1,4 +1,6 @@
 module System.Fuse.CTypes
+-- THIS MODULE MUST NOT IMPORT ANY OTHERS
+-- IT IS PURELY DECLARATIVE
     ( CDirHandle
     , CFillDirBuf
     , CFuseArgs
@@ -13,7 +15,13 @@ module System.Fuse.CTypes
     , CStructStatVFS
 
     , CStat
+
+
     ) where
+
+import Foreign.Ptr
+import Foreign.C.Types
+import Foreign.C.String
 
 -- | struct types from FUSE
 data CDirHandle       -- fuse_dirh_t

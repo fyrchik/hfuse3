@@ -1,10 +1,6 @@
 ## Fixes
 
-1. Move withFuseOps to System.Fuse.FuseOperations + refactor withStructFuse
-
-2. Move foreign C imports to separate module (probably System.Fuse.CTypes)
-
-3. Try to match standard implementation more closely (e.g. use fuse_main_real if possibly)
+- Try to match standard implementation more closely (e.g. use fuse_main_real if possibly)
 
 ## Features
 
