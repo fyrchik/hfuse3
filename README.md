@@ -15,31 +15,22 @@ This is a fork of this binding https://github.com/m15k/hfuse to the 2nd version 
 - Programs using HFuse should be compiled with -threaded.
 - This now works for base 4.6+
 
-Following was not tested with libfuse3:
+Following was not tested with libfuse3 (tho works in project which i forked):
 - Added build options support for FreeBSD (contribution by https://github.com/pesco)
 - MacFUSE should also work (https://github.com/mwotton/hfuse)
 - [OSXFuse](https://osxfuse.github.io/) also works (https://github.com/edyu/hfuse)
 
 ## Installation
 
-All of the usual methods for installation will be supported.
-For Mac OS X, you must install [OSXFuse](https://osxfuse.github.io/) first.
-
 **Installation for development**
 
-Can be installed via Github [repo][2]
+Can be installed via Github [repo]
 
 ```
-git clone git://github.com/fyrchik/hfuse
-cd hfuse
-stack build
+git clone git://github.com/fyrchik/hfuse3
+cd hfuse3
+stack build [--flag hfuse3:examples]
 ```
-
-## Development
-
-To get a feel for HFuse, there are a number of example applications.  They can be built by supplying the `-fdeveloper` [configuration flag][3] to Cabal.
-
-> git clone https://github.com/fyrchik/hfuse
 
 ## Examples
 
@@ -64,8 +55,6 @@ $ fusermount -u ~/fuseTest
 ```
 
 ## Other Samples
-
-There are other projects on hackage which use HFuse as a dependency.  Check [these](http://packdeps.haskellers.com/reverse/HFuse) out for a possibly richer experience than what is included with the [examples](./examples) folder.
 
 If you lack for inspiration the FUSE [Wiki](http://sourceforge.net/p/fuse/wiki/FileSystems/) have amassed quite the list of links to downstream projects.
 
