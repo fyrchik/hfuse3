@@ -1,0 +1,21 @@
+## Fixes
+
+1. Move withFuseOps to System.Fuse.FuseOperations + refactor withStructFuse
+
+2. Move foreign C imports to separate module (probably System.Fuse.CTypes)
+
+3. Try to match standard implementation more closely (e.g. use fuse_main_real if possibly)
+
+## Features
+
+1. Reimplement all examples from libfuse repository in Haskell
+
+2. Implement remaning operations in FuseOperations
+
+3. Implement low_level bindings
+
+4. I would like to create the following examples:
+
+- MemoryFS.hs := In-memory file system
+- VBoxFS.hs := Mount VirtualBox disks as filesystem
+- SSHFS.hs := SSH file system

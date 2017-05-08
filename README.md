@@ -73,24 +73,4 @@ If you lack for inspiration the FUSE [Wiki](http://sourceforge.net/p/fuse/wiki/F
 
 Help is always welcome.  Pull requests are appreciated.
 
-If you run into any problems or bugs, please report the issue on [Github][1]
-
-## RoadMap
-
-1. Reimplement all examples from libfuse repository in Haskell
-
-2. Implement remaning operations in FuseOperations
-
-3. Implement low_level bindings
-
-4. Perform moderate refactoring to split all code into separate modules
-
-5. I would like to create the following examples:
-
-- MemoryFS.hs := In-memory file system
-- VBoxFS.hs := Mount VirtualBox disks as filesystem
-- SSHFS.hs := SSH file system
-
-[1]: https://github.com/m15k/google-drive-api/issues        "Google-Drive-API Library Issues"
-[2]: https://github.com/m15k/google-drive-api               "Google-Drive-API Library"
-[3]: http://www.haskell.org/cabal/users-guide/developing-packages.html#configurations "Cabal Configurations"
+If you run into any problems or bugs, please report the issue on [Github]
