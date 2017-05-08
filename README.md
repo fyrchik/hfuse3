@@ -40,14 +40,14 @@ stack build [--flag hfuse3:examples]
 
 ```
 $ mkdir ~/fuseTest
-$ ./HelloFS ~/fuseTest
+$ ./HelloFS ~/fuseTest --name=hello_filename --contents="This will be inside"
 ```
 
 This creates a file in the *fuseTest* directory.  Now to test the application.
 
 ```
-$ cat ~/fuseTest/hello
-Hello World, HFuse!
+$ cat ~/fuseTest/hello_filename
+This will be inside
 ```
 
 To unmount issue the following command:

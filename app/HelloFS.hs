@@ -28,13 +28,13 @@ instance Storable Options where
     peek ptr = do
         let p = castPtr ptr :: Ptr CString
         p1 <- peek p
-        p2 <- peek (p `plusPtr` sizeOf p1)
+        p2 <- peek (p `plusPtr` sizeOf (nullPtr :: CString))
         return $ Options p1 p2
 
     poke ptr (Options n c) = do
         let p = castPtr ptr :: Ptr CString
         poke p n
-        poke (p `plusPtr` sizeOf n) c
+        poke (p `plusPtr` sizeOf (nullPtr :: CString)) c
 
 main :: IO ()
 main = print 1 >> fuseMainOpts helloFSOps defaultExceptionHandler
@@ -56,14 +56,8 @@ helloFSOps userData =
 
 helloInit :: Options -> IO (Ptr ())
 helloInit userData = do
-    print "LUL"
-    print $ name userData
-    print $ contents userData
-    if contents userData == nullPtr
-      then return nullPtr
-      else do p <- new userData
-              print p
-              return $ castPtr p
+    p <- new userData
+    return $ castPtr p
 
 helloDestroy :: Ptr () -> IO ()
 helloDestroy ptr = do
@@ -77,7 +71,7 @@ helloString :: B.ByteString
 helloString = B.pack "Hello World, HFuse!\n"
 
 helloPath :: FilePath
-helloPath = "/hello"
+helloPath = "hello"
 
 getPrivateData :: FuseContext -> IO Options
 getPrivateData ctx =
@@ -162,6 +156,8 @@ helloReadDirectory :: FilePath -> IO (Either Errno [(FilePath, FileStat)])
 helloReadDirectory "/" = do
     ctx <- getFuseContext
     n <- getPrivateData ctx >>= _getName
+    print "lel"
+    print n
     return $ Right [(".",  dirStat ctx)
                    ,("..", dirStat ctx)
                    ,(n, fileStat ctx)
