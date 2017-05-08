@@ -11,6 +11,7 @@ module System.Fuse.FuseOperations
     , fileStatToCStat
     ) where
 
+import System.Fuse.CTypes
 import System.Fuse.Types
 
 import Control.Monad
@@ -84,8 +85,6 @@ data FileStat = FileStat { statEntryType :: EntryType
  - FileStat is not an instance of Storable.  But it should be, rather than this
  - next function existing!
  -}
-
-data CStat -- struct stat
 
 fileStatToCStat :: FileStat -> Ptr CStat -> IO ()
 fileStatToCStat stat pStat = do

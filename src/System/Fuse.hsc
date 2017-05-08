@@ -54,6 +54,7 @@ module System.Fuse
 
 import Prelude hiding ( Read )
 
+import System.Fuse.CTypes
 import System.Fuse.FuseOperations
 import System.Fuse.Types
 
@@ -865,16 +866,12 @@ catch = catchIOError
 -- exported C called from Haskell
 ---
 
-data CFuseArgs -- struct fuse_args
-
-data CFuseChan -- struct fuse_chan
 foreign import ccall safe "fuse.h fuse_mount"
     fuse_mount :: Ptr CStructFuse -> CString -> IO CInt
 
 foreign import ccall safe "fuse.h fuse_unmount"
     fuse_unmount :: Ptr CStructFuse -> IO ()
 
-data CFuseSession -- struct fuse_session
 foreign import ccall safe "fuse.h fuse_get_session"
     fuse_get_session :: Ptr CStructFuse -> IO (Ptr CFuseSession)
 
@@ -887,12 +884,9 @@ foreign import ccall safe "fuse.h fuse_set_signal_handlers"
 foreign import ccall safe "fuse.h fuse_remove_signal_handlers"
     fuse_remove_signal_handlers :: Ptr CFuseSession -> IO ()
 
-data CFuseCmdlineOpts -- struct fuse_cmdline_opts
 foreign import ccall safe "fuse3/fuse_lowlevel.h fuse_parse_cmdline"
     fuse_parse_cmdline :: Ptr CFuseArgs -> Ptr CFuseCmdlineOpts -> IO CInt
 
-data CStructFuse -- struct fuse
-data CFuseOperations -- struct fuse_operations
 foreign import ccall safe "fuse.h fuse_new"
     fuse_new :: Ptr CFuseArgs -> Ptr CFuseOperations -> CSize -> Ptr () -> IO (Ptr CStructFuse)
 
@@ -905,16 +899,12 @@ foreign import ccall safe "fuse.h fuse_opt_free_args"
 foreign import ccall safe "fuse.h fuse_loop_mt"
     fuse_loop_mt :: Ptr CStructFuse -> CInt -> IO CInt
 
-data CFuseContext
 foreign import ccall safe "fuse.h fuse_get_context"
     fuse_get_context :: IO (Ptr CFuseContext)
 
 ---
 -- dynamic Haskell called from C
 ---
-
-data CFuseFileInfo -- struct fuse_file_info
-data CFuseConnInfo -- struct fuse_conn_info
 
 type CGetAttr = CString -> Ptr CStat -> IO CInt
 foreign import ccall safe "wrapper"
@@ -976,7 +966,6 @@ type CWrite = CString -> CString -> CSize -> COff -> Ptr CFuseFileInfo -> IO CIn
 foreign import ccall safe "wrapper"
     mkWrite :: CWrite -> IO (FunPtr CWrite)
 
-data CStructStatVFS -- struct fuse_stat_fs
 type CStatFS = CString -> Ptr CStructStatVFS -> IO CInt
 foreign import ccall safe "wrapper"
     mkStatFS :: CStatFS -> IO (FunPtr CStatFS)
@@ -991,7 +980,7 @@ foreign import ccall safe "wrapper"
 
 type CFSync = CString -> Int -> Ptr CFuseFileInfo -> IO CInt
 foreign import ccall safe "wrapper"
-    mkFSync :: CFSync -> IO (FunPtr CFSync) 
+    mkFSync :: CFSync -> IO (FunPtr CFSync)
 
 -- XXX add *xattr bindings
 
@@ -1048,12 +1037,10 @@ delFH pFuseFileInfo = do
 -- dynamic C called from Haskell
 ---
 
-data CDirHandle -- fuse_dirh_t
 type CDirFil = Ptr CDirHandle -> CString -> Int -> IO CInt -- fuse_dirfil_t
 foreign import ccall safe "dynamic"
     mkDirFil :: FunPtr CDirFil -> CDirFil
 
-data CFillDirBuf -- void
 type CFillDir = Ptr CFillDirBuf -> CString -> Ptr CStat -> COff -> CUInt -> IO CInt
 
 foreign import ccall safe "dynamic"

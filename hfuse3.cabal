@@ -1,5 +1,5 @@
 name:                   hfuse3
-version:                0.1.0.0
+version:                0.1.0.1
 license:                BSD3
 license-File:           LICENSE
 author:                 Jeremy Bobbio
@@ -23,7 +23,9 @@ library
   hs-source-dirs:         src
   build-depends:          base >= 4 && < 5, unix, bytestring
   exposed-modules:        System.Fuse
-  other-modules:          System.Fuse.Types, System.Fuse.FuseOperations
+  other-modules:          System.Fuse.CTypes
+                        , System.Fuse.FuseOperations
+                        , System.Fuse.Types
   default-Extensions:     ForeignFunctionInterface ScopedTypeVariables EmptyDataDecls
   Includes:               dirent.h, fuse.h, fcntl.h, sys/statfs.h
   Include-Dirs:           /usr/include, /usr/local/include, .
