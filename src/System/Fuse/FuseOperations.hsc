@@ -8,6 +8,8 @@ module System.Fuse.FuseOperations
     , defaultFuseOps
     ) where
 
+import System.Fuse.Types
+
 import Control.Monad
 import qualified Data.ByteString.Char8    as B
 import qualified Data.ByteString.Internal as B
@@ -24,17 +26,14 @@ import System.Exit
 
 #include <fuse.h>
 
--- | The Unix type of a node in the filesystem.
-data EntryType
-    = Unknown            -- ^ Unknown entry type
-    | NamedPipe
-    | CharacterSpecial
-    | Directory
-    | BlockSpecial
-    | RegularFile
-    | SymbolicLink
-    | Socket
-      deriving(Show)
+-- | Used by 'fuseSynchronizeFile' and 'fuseSynchronizeDirectory'.
+data SyncType
+    = FullSync
+    -- ^ Synchronize all in-core parts of a file to disk: file content and
+    -- metadata.
+    | DataSync
+    -- ^ Synchronize only the file content.
+    deriving (Eq, Enum)
 
 -- | Type used by the 'fuseGetFileSystemStats'.
 data FileSystemStats = FileSystemStats
@@ -54,14 +53,7 @@ data FileSystemStats = FileSystemStats
       -- ^ Maximum length of filenames. FUSE default is 255.
     }
 
--- | Used by 'fuseSynchronizeFile' and 'fuseSynchronizeDirectory'.
-data SyncType
-    = FullSync
-    -- ^ Synchronize all in-core parts of a file to disk: file content and
-    -- metadata.
-    | DataSync
-    -- ^ Synchronize only the file content.
-    deriving (Eq, Enum)
+
 
 {- | Used by 'fuseGetFileStat'.  Corresponds to @struct stat@ from @stat.h@;
      @st_dev@, @st_ino@ and @st_blksize@ are omitted, since (from the libfuse
