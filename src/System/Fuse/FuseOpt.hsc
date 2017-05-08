@@ -27,10 +27,7 @@ data FuseOpt = FuseOpt String FuseOptType
 
 type FuseOptResult = [(String, Either String Bool)]
 
---fuse_opt_parse :: Ptr CFuseArgs -> Ptr () -> Ptr FuseOpt -> Ptr () -> IO CInt
--- | 'fuseOptParse' parses
--- 2nd and 3rd arguments must correspond to each other, because
--- offset in 'FuseOpt' is used to determine location of opt in Storable instance
+-- | 'fuseOptParse' parses command line options (2nd argument)
 fuseOptParse :: Ptr CFuseArgs -- ^ Pointer to struct fuse_args
              -> [FuseOpt]     -- ^ List of option names and types
              -> IO (FuseOptResult, CInt)
