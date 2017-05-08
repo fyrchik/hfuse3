@@ -187,7 +187,7 @@ fuseParseCommandLine pArgs = do
                                      else return $ Nothing
                        singleThreaded <- (#peek struct fuse_cmdline_opts, singlethread) pOpts
                        foreground     <- (#peek struct fuse_cmdline_opts, foreground)   pOpts
-                       return $ Just (mountPt, (singleThreaded :: Int) == 0, (foreground :: Int) == 1)
+                       return $ Just (mountPt, (singleThreaded :: CInt) == 0, (foreground :: CInt) == 1)
                else return Nothing
 
 -- haskell version of daemon(2)

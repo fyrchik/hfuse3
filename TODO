@@ -1,5 +1,7 @@
 ## Fixes
 
+- Find out why in foreground mode system is not unmounted after exit
+
 - Try to match standard implementation more closely (e.g. use fuse_main_real if possibly)
 
 ## Features
