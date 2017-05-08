@@ -6,6 +6,8 @@ This library is the Haskell binding to this library.
 
 This is a fork of this binding https://github.com/m15k/hfuse to the 2nd version of libfuse
 
+Right now API is a bit unstable (because it is changing to better reflect how 3rd version of libfuse if used).
+
 ## License
 
 [BSD 3-Clause](./LICENSE)

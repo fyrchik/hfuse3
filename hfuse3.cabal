@@ -1,5 +1,5 @@
 name:                   hfuse3
-version:                0.1.0.1
+version:                0.1.1.0
 license:                BSD3
 license-File:           LICENSE
 author:                 Jeremy Bobbio
@@ -25,6 +25,7 @@ library
   exposed-modules:        System.Fuse
   other-modules:          System.Fuse.CTypes
                         , System.Fuse.FuseOperations
+                        , System.Fuse.FuseOpt
                         , System.Fuse.Types
                         , System.Fuse.Utils
   default-Extensions:     ForeignFunctionInterface ScopedTypeVariables EmptyDataDecls

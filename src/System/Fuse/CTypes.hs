@@ -10,6 +10,7 @@ module System.Fuse.CTypes
     , CFuseContext
     , CFuseFileInfo
     , CFuseOperations
+    , CFuseOpt
     , CFuseSession
     , CStructFuse
     , CStructStatVFS
@@ -33,6 +34,7 @@ data CFuseConnInfo    -- struct fuse_conn_info
 data CFuseContext     -- struct fuse_context
 data CFuseFileInfo    -- struct fuse_file_info
 data CFuseOperations  -- struct fuse_operations
+data CFuseOpt         -- struct fuse_opt
 data CFuseSession     -- struct fuse_session
 data CStructFuse      -- struct fuse
 data CStructStatVFS   -- struct fuse_stat_fs

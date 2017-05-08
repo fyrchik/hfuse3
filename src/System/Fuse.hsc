@@ -29,10 +29,14 @@ module System.Fuse
       -- $intro
 
       module Foreign.C.Error
+    , module System.Fuse.FuseOpt
     , FuseOperations(..)
     , defaultFuseOps
     , fuseMain -- :: FuseOperations fh -> (Exception -> IO Errno) -> IO ()
-    , fM
+    , fuseMainOpts -- :: Storable a  => FuseOperations fh -> (Exception -> IO Errno) -> OptSpec a -> IO ()
+    , fM -- just testing, for later use
+    , fuse_get_context
+    , fuse_main
     , fuseRun -- :: String -> [String] -> FuseOperations fh -> (Exception -> IO Errno) -> IO ()
     , defaultExceptionHandler -- :: Exception -> IO Errno
       -- * Operations datatypes
@@ -42,7 +46,7 @@ module System.Fuse
     , SyncType(..)
       -- * FUSE Context
     , getFuseContext -- :: IO FuseContext
-    , FuseContext(fuseCtxUserID, fuseCtxGroupID, fuseCtxProcessID)
+    , FuseContext(fuseCtxUserID, fuseCtxGroupID, fuseCtxProcessID, fuseCtxPrivateData)
       -- * File modes
     , entryTypeToFileMode -- :: EntryType -> FileMode
     , fileModeToEntryType -- :: FileMode -> EntryType
@@ -56,6 +60,7 @@ import Prelude hiding ( Read )
 
 import System.Fuse.CTypes
 import System.Fuse.FuseOperations
+import System.Fuse.FuseOpt
 import System.Fuse.Types
 
 import Control.Monad
@@ -77,8 +82,12 @@ import System.Posix.IO ( OpenMode(..), OpenFileFlags(..) )
 import qualified System.Posix.Signals as Signals
 import GHC.IO.Handle(hDuplicateTo)
 import System.Exit
+
+
 #if MIN_VERSION_base(4,6,0)
 import System.IO.Error (catchIOError,ioeGetErrorString)
+
+catch = catchIOError
 #else
 import System.IO.Error (catch,ioeGetErrorString)
 #endif
@@ -123,6 +132,7 @@ data FuseContext = FuseContext
     { fuseCtxUserID :: UserID
     , fuseCtxGroupID :: GroupID
     , fuseCtxProcessID :: ProcessID
+    , fuseCtxPrivateData :: Ptr ()
     }
 
 -- | Returns the context of the program doing the current FUSE call.
@@ -132,11 +142,12 @@ getFuseContext =
        userID <- (#peek struct fuse_context, uid) pCtx
        groupID <- (#peek struct fuse_context, gid) pCtx
        processID <- (#peek struct fuse_context, pid) pCtx
+       pData <-(#peek struct fuse_context, private_data) pCtx
        return $ FuseContext { fuseCtxUserID = userID
                             , fuseCtxGroupID = groupID
                             , fuseCtxProcessID = processID
+                            , fuseCtxPrivateData = pData
                             }
-
 
 -- Allocates a fuse_args struct to hold the commandline arguments.
 withFuseArgs :: String -> [String] -> (Ptr CFuseArgs -> IO b) -> IO b
@@ -158,9 +169,11 @@ withStructFuse :: forall e fh b. Exception e
                -> (e -> IO Errno)
                -> (Ptr CStructFuse -> IO b)
                -> IO b
-withStructFuse pArgs ops handler f =
+withStructFuse = withStructFuseOpts nullPtr
+
+withStructFuseOpts pData pArgs ops handler f =
     withFuseOps ops handler $ \pOps -> do
-      structFuse <- fuse_new pArgs pOps (#size struct fuse_operations) nullPtr
+      structFuse <- fuse_new pArgs pOps (#size struct fuse_operations) pData
       if structFuse == nullPtr
         then fail ""
         else E.finally (f structFuse)
@@ -175,7 +188,7 @@ withStructFuse pArgs ops handler f =
 -- See the comment in fuse_session_exit for why.
 -- TODO: refactor return type
 fuseParseCommandLine :: Ptr CFuseArgs -> IO (Maybe (Maybe String, Bool, Bool))
-fuseParseCommandLine pArgs = do
+fuseParseCommandLine pArgs =
     allocaBytes (#size struct fuse_cmdline_opts) $ \pOpts ->
         do retval <- fuse_parse_cmdline pArgs pOpts
            if retval == 0
@@ -184,7 +197,7 @@ fuseParseCommandLine pArgs = do
                                      then do a <- peekCString cMountPt
                                              free cMountPt
                                              return $ Just a
-                                     else return $ Nothing
+                                     else return Nothing
                        singleThreaded <- (#peek struct fuse_cmdline_opts, singlethread) pOpts
                        foreground     <- (#peek struct fuse_cmdline_opts, foreground)   pOpts
                        return $ Just (mountPt, (singleThreaded :: CInt) == 0, (foreground :: CInt) == 1)
@@ -201,9 +214,9 @@ daemon f = forkProcess d >> exitImmediately ExitSuccess
                       withFile "/dev/null" WriteMode (\devNullOut ->
                          do hDuplicateTo devNullOut stdout
                             hDuplicateTo devNullOut stderr)
-                      withFile "/dev/null" ReadMode (\devNullIn -> hDuplicateTo devNullIn stdin)
+                      withFile "/dev/null" ReadMode (`hDuplicateTo` stdin)
                       f
-                      exitWith ExitSuccess)
+                      exitSuccess)
                   (const exitFailure)
 
 -- Installs signal handlers for the duration of the main loop.
@@ -221,13 +234,14 @@ withSignalHandlers exitHandler f =
 
 
 -- Mounts the filesystem, forks, and then starts fuse
-fuseMainReal foreground ops handler pArgs mountPt = do
+fuseMainReal pData foreground ops handler pArgs mountPt =
     withCString mountPt (\cMountPt ->
-      do withStructFuse pArgs ops handler (\pFuse -> do
+      withStructFuseOpts pData pArgs ops handler (\pFuse -> do
           fuse_mount pFuse cMountPt
+          pctx <- fuse_get_context
           E.finally
                (if foreground -- finally ready to fork
-                 then changeWorkingDirectory "/" >> (procMain pFuse)
+                 then changeWorkingDirectory "/" >> procMain pFuse
                  else daemon (procMain pFuse))
                (fuse_unmount pFuse)))
 
@@ -238,11 +252,12 @@ fuseMainReal foreground ops handler pArgs mountPt = do
                               -- In the single-threaded case, FUSE depends on their
                               -- recv() call to finish with EINTR when signals arrive.
                               -- This doesn't happen with GHC's signal handling in place.
+                              pctx <- fuse_get_context
                               withSignalHandlers (fuse_session_exit session) $
                                  do retVal <- fuse_loop_mt pFuse 0
                                     -- TODO: add opt clone_fd ^
                                     if retVal == 1 
-                                      then exitWith ExitSuccess
+                                      then exitSuccess
                                       else exitFailure
                                     return ()
 
@@ -271,21 +286,24 @@ fuseMainReal foreground ops handler pArgs mountPt = do
 --   * calls FUSE event loop.
 
 foreign import ccall "fuse.h fuse_main_real"
-    fuse_main_real :: Int -> Ptr CString -> Ptr CFuseOperations -> CSize -> Ptr () -> IO Int
+    fuse_main_real :: Int -> Ptr CString -> Ptr CFuseOperations -> CSize -> Ptr a -> IO Int
 
-fM :: Exception e => FuseOperations fh -> (e -> IO Errno) -> IO ()
-fM ops handler = do
+fuse_main argc pArgv pOps p = fuse_main_real argc pArgv pOps (#size struct fuse_operations) p
+
+fM :: (Exception e, Storable a) => FuseOperations fh -> (e -> IO Errno) -> OptSpec a -> IO ()
+fM ops handler opts = do
     prog <- getProgName
     args <- getArgs
     withFuseOps ops handler (\pOps ->
         withFuseArgs prog args (\pArgs -> do
-           let argv = (prog:args)
+           (res, ret) <- fuseOptParse pArgs opts
+           p <- new res
+           let argv = prog : args
                argc = length args
            withMany withCString argv (\pArgs ->
                withArray pArgs (\pArgv -> do
-                   fuse_main_real argc pArgv pOps (#size struct fuse_operations) nullPtr
-                   return ()
-                   ))))
+                   fuse_main_real argc pArgv pOps (#size struct fuse_operations) p
+                   return ()))))
 
 fuseMain :: Exception e => FuseOperations fh -> (e -> IO Errno) -> IO ()
 fuseMain ops handler = do
@@ -293,26 +311,52 @@ fuseMain ops handler = do
     -- from C behind the GHC runtime's back, which deadlocks in GHC 6.8.
     -- Instead, we reimplement fuse_main in Haskell using the forkProcess and the
     -- lower-level fuse_new/fuse_loop_mt API.
+    fuseMainOpts (const ops) handler noOpt
+
+fuseMainOpts :: (Exception e, Storable a)
+             => (a -> FuseOperations fh)
+             -> (e -> IO Errno)
+             -> OptSpec a
+             -> IO ()
+fuseMainOpts ops handler opts = do
     prog <- getProgName
     args <- getArgs
-    fuseRun prog args ops handler
+    fuseRunOpts prog args ops handler opts
 
 fuseRun :: String -> [String] -> Exception e => FuseOperations fh -> (e -> IO Errno) -> IO ()
-fuseRun prog args ops handler =
+fuseRun prog args ops handler = fuseRunOpts prog args (const ops) handler noOpt
+
+fuseRunOpts :: String -> [String]
+            -> (Exception e, Storable a) => (a -> FuseOperations fh) -> (e -> IO Errno)
+            -> OptSpec a -> IO ()
+fuseRunOpts prog args ops handler opts =
     catch
-       (withFuseArgs prog args (\pArgs ->
-         do cmd <- fuseParseCommandLine pArgs
+      (withFuseArgs prog args (\pArgs -> do
+            (res, ret) <- fuseOptParse pArgs opts
+            cmd <- fuseParseCommandLine pArgs
             case cmd of
-              Nothing -> fail ""
-              Just (Nothing, _, _) -> fail "Usage error: mount point required"
-              Just (Just mountPt, _, foreground) -> fuseMainReal foreground ops handler pArgs mountPt))
-       ((\errStr -> when (not $ null errStr) (putStrLn errStr) >> exitFailure) . ioeGetErrorString)
+                Nothing -> fail ""
+                Just (Nothing, _, _) -> fail "Usage error: mount point required"
+                Just (Just mountPt, _, foreground) -> do
+                    fuseMainReal nullPtr foreground (ops res) handler pArgs mountPt
+                    return ()))
+      ((\errStr -> unless (null errStr) (putStrLn errStr) >> exitFailure) . ioeGetErrorString)
 
 
-#if MIN_VERSION_base(4,6,0)
-catch = catchIOError
-#else
-#endif
+
+--fuse_opt_parse :: Ptr CFuseArgs -> Ptr () -> Ptr FuseOpt -> Ptr () -> IO CInt
+-- | 'fuseOptParse' parses
+-- 2nd and 3rd arguments must correspond to each other, because
+-- offset in 'FuseOpt' is used to determine location of opt in Storable instance
+-- TODO: think on better interface AND implement error handling
+fuseOptParse :: Storable a => Ptr CFuseArgs -> OptSpec a -> IO (a, CInt)
+fuseOptParse _     ([],res)    = return (res, 0)
+fuseOptParse pArgs (opts,res)  = do
+    withArray0 fuseOptEnd opts $ \pOpts -> do
+        with res $ \pData -> do
+            ret <- fuse_opt_parse pArgs pData pOpts nullPtr
+            res <- peek pData
+            return (res, ret)
 
 -----------------------------------------------------------------------------
 -- C land
@@ -339,6 +383,9 @@ foreign import ccall safe "fuse.h fuse_set_signal_handlers"
 foreign import ccall safe "fuse.h fuse_remove_signal_handlers"
     fuse_remove_signal_handlers :: Ptr CFuseSession -> IO ()
 
+foreign import ccall safe "fuse3/fuse_opt.h fuse_opt_parse"
+    fuse_opt_parse :: Ptr CFuseArgs -> Ptr a -> Ptr FuseOpt -> Ptr () -> IO CInt
+
 foreign import ccall safe "fuse3/fuse_lowlevel.h fuse_parse_cmdline"
     fuse_parse_cmdline :: Ptr CFuseArgs -> Ptr CFuseCmdlineOpts -> IO CInt
 
@@ -356,4 +403,3 @@ foreign import ccall safe "fuse.h fuse_loop_mt"
 
 foreign import ccall safe "fuse.h fuse_get_context"
     fuse_get_context :: IO (Ptr CFuseContext)
-

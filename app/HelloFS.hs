@@ -1,31 +1,112 @@
 module Main where
 
+import Control.Monad
 import qualified Data.ByteString.Char8 as B
 import Foreign.C.Error
+import Foreign.C.Types
+import Foreign.C.String
+import Foreign.Marshal.Alloc
+import Foreign.Marshal
+import Foreign.Marshal.Utils
+import Foreign.Ptr
+import Foreign.Storable
 import System.Posix.Types
 import System.Posix.Files
 import System.Posix.IO
+import System.Environment ( getProgName, getArgs )
 
 import System.Fuse
 
 type HT = ()
 
-main :: IO ()
-main = fuseMain helloFSOps defaultExceptionHandler
+data Options = Options { name :: CString, contents :: CString }
+    deriving (Eq, Show)
 
-helloFSOps :: FuseOperations HT
-helloFSOps = defaultFuseOps { fuseGetFileStat = helloGetFileStat
-                            , fuseOpen        = helloOpen
-                            , fuseRead        = helloRead
-                            , fuseOpenDirectory = helloOpenDirectory
-                            , fuseReadDirectory = helloReadDirectory
-                            , fuseGetFileSystemStats = helloGetFileSystemStats
-                            }
+instance Storable Options where
+    sizeOf _ = 2 * sizeOf (nullPtr :: CString)
+    alignment _  = alignment (undefined :: CString)
+    peek ptr = do
+        let p = castPtr ptr :: Ptr CString
+        p1 <- peek p
+        p2 <- peek (p `plusPtr` sizeOf p1)
+        return $ Options p1 p2
+
+    poke ptr (Options n c) = do
+        let p = castPtr ptr :: Ptr CString
+        poke p n
+        poke (p `plusPtr` sizeOf n) c
+
+main :: IO ()
+main = print 1 >> fuseMainOpts helloFSOps defaultExceptionHandler
+         ( [ FuseOpt "--name=%s" 0 1
+           , FuseOpt "--contents=%s" (8) 1]
+         , Options nullPtr nullPtr)
+
+helloFSOps :: Options -> FuseOperations HT
+helloFSOps userData =
+    defaultFuseOps { fuseGetFileStat = helloGetFileStat
+                   , fuseOpen        = helloOpen
+                   , fuseRead        = helloRead
+                   , fuseOpenDirectory = helloOpenDirectory
+                   , fuseReadDirectory = helloReadDirectory
+                   , fuseGetFileSystemStats = helloGetFileSystemStats
+                   , fuseInit = helloInit userData
+                   , fuseDestroy = helloDestroy
+                   }
+
+helloInit :: Options -> IO (Ptr ())
+helloInit userData = do
+    print "LUL"
+    print $ name userData
+    print $ contents userData
+    if contents userData == nullPtr
+      then return nullPtr
+      else do p <- new userData
+              print p
+              return $ castPtr p
+
+helloDestroy :: Ptr () -> IO ()
+helloDestroy ptr = do
+    unless (p == nullPtr) (peek p >>= freeOpts >> free p)
+  where p = castPtr ptr :: Ptr Options
+        freeOpts (Options n c) = do
+            unless (n == nullPtr) (free n)
+            unless (c == nullPtr) (free c)
+
 helloString :: B.ByteString
 helloString = B.pack "Hello World, HFuse!\n"
 
 helloPath :: FilePath
 helloPath = "/hello"
+
+getPrivateData :: FuseContext -> IO Options
+getPrivateData ctx =
+    let ptr = fuseCtxPrivateData ctx
+     in if ptr == nullPtr then return $ Options nullPtr nullPtr
+                          else peek (castPtr ptr :: Ptr Options)
+
+_getContents :: Options -> IO B.ByteString
+_getContents (Options _ p) =
+    if p == nullPtr then return helloString
+                    else B.pack <$> peekCString p
+
+_getName :: Options -> IO String
+_getName (Options p _) =
+    if p == nullPtr then return helloPath
+                    else peekCString p
+
+helloNameFromContext :: FuseContext -> IO B.ByteString
+helloNameFromContext ctx = do
+    let pData = fuseCtxPrivateData ctx
+    if pData == nullPtr
+      then print "lul" >> return helloString
+      else print "kek" >>
+           peek (castPtr pData :: Ptr Options) >>= \o ->
+           if contents o == nullPtr
+             then return helloString
+             else peekCString (contents o) >>= (return . B.pack)
+
+
 dirStat ctx = FileStat { statEntryType = Directory
                        , statFileMode = foldr1 unionFileModes
                                           [ ownerReadMode
@@ -67,11 +148,12 @@ helloGetFileStat :: FilePath -> IO (Either Errno FileStat)
 helloGetFileStat "/" = do
     ctx <- getFuseContext
     return $ Right $ dirStat ctx
-helloGetFileStat path | path == helloPath = do
+helloGetFileStat path = do
     ctx <- getFuseContext
-    return $ Right $ fileStat ctx
-helloGetFileStat _ =
-    return $ Left eNOENT
+    helloPath <- getPrivateData ctx >>= _getName
+    if path == '/':helloPath
+      then return $ Right $ fileStat ctx
+      else return $ Left eNOENT
 
 helloOpenDirectory "/" = return eOK
 helloOpenDirectory _   = return eNOENT
@@ -79,26 +161,31 @@ helloOpenDirectory _   = return eNOENT
 helloReadDirectory :: FilePath -> IO (Either Errno [(FilePath, FileStat)])
 helloReadDirectory "/" = do
     ctx <- getFuseContext
-    return $ Right [(".",          dirStat  ctx)
-                   ,("..",         dirStat  ctx)
-                   ,(helloName,    fileStat ctx)
+    n <- getPrivateData ctx >>= _getName
+    return $ Right [(".",  dirStat ctx)
+                   ,("..", dirStat ctx)
+                   ,(n, fileStat ctx)
                    ]
-    where (_:helloName) = helloPath
 helloReadDirectory _ = return (Left (eNOENT))
 
 helloOpen :: FilePath -> OpenMode -> OpenFileFlags -> IO (Either Errno HT)
-helloOpen path mode flags
-    | path == helloPath = case mode of
-                            ReadOnly -> return (Right ())
-                            _        -> return (Left eACCES)
-    | otherwise         = return (Left eNOENT)
+helloOpen path mode flags = do
+    helloPath <- getFuseContext >>= getPrivateData >>= _getName
+    if path == '/':helloPath
+      then case mode of
+            ReadOnly -> return (Right ())
+            _        -> return (Left eACCES)
+      else return (Left eNOENT)
 
 
 helloRead :: FilePath -> HT -> ByteCount -> FileOffset -> IO (Either Errno B.ByteString)
-helloRead path _ byteCount offset
-    | path == helloPath =
-        return $ Right $ B.take (fromIntegral byteCount) $ B.drop (fromIntegral offset) helloString
-    | otherwise         = return $ Left eNOENT
+helloRead path _ byteCount offset = do
+    d <- getFuseContext >>= getPrivateData
+    helloPath <- _getName d
+    if path == '/':helloPath
+      then do helloString <- _getContents d
+              return $ Right $ B.take (fromIntegral byteCount) $ B.drop (fromIntegral offset) helloString
+      else return $ Left eNOENT
 
 helloGetFileSystemStats :: String -> IO (Either Errno FileSystemStats)
 helloGetFileSystemStats str =

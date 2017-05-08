@@ -234,10 +234,10 @@ data FuseOperations fh = FuseOperations
 
         -- | Initializes the filesystem.  This is called before all other
         --   operations.
-        fuseInit :: IO (),
+        fuseInit :: IO (Ptr ()),
 
         -- | Called on filesystem exit to allow cleanup.
-        fuseDestroy :: IO ()
+        fuseDestroy :: Ptr () -> IO ()
       }
 
 -- | Empty \/ default versions of the FUSE operations.
@@ -268,8 +268,8 @@ defaultFuseOps =
                    , fuseReleaseDirectory = \_ -> return eNOSYS
                    , fuseSynchronizeDirectory = \_ _ -> return eNOSYS
                    , fuseAccess = \_ _ -> return eNOSYS
-                   , fuseInit = return ()
-                   , fuseDestroy = return ()
+                   , fuseInit = return nullPtr
+                   , fuseDestroy = \_ -> return ()
                    }
 
 -- | 'withFuseOps' allocate fuse_operations struct and invokes
@@ -535,12 +535,10 @@ withFuseOps ops handler f =
                  return (- errno)
           wrapInit :: CInit
           wrapInit pFuseConnInfo =
-            handle (\e -> defaultExceptionHandler e >> return nullPtr) $
-              do fuseInit ops
-                 return nullPtr
+            handle (\e -> defaultExceptionHandler e >> return nullPtr) $ fuseInit ops
           wrapDestroy :: CDestroy
-          wrapDestroy _ = handle (\e -> defaultExceptionHandler e >> return ()) $
-              do fuseDestroy ops
+          wrapDestroy p = handle (\e -> defaultExceptionHandler e >> return ()) $
+              do fuseDestroy ops p
 
 -- | Default exception handler.
 -- Print the exception on error output and returns 'eFAULT'.
@@ -649,12 +647,11 @@ type CAccess = CString -> CInt -> IO CInt
 foreign import ccall safe "wrapper"
     mkAccess :: CAccess -> IO (FunPtr CAccess)
 
--- CInt because anything would be fine as we don't use them
-type CInit = Ptr CFuseConnInfo -> IO (Ptr CInt)
+type CInit = Ptr CFuseConnInfo -> IO (Ptr ())
 foreign import ccall safe "wrapper"
     mkInit :: CInit -> IO (FunPtr CInit)
 
-type CDestroy = Ptr CInt -> IO ()
+type CDestroy = Ptr () -> IO ()
 foreign import ccall safe "wrapper"
     mkDestroy :: CDestroy -> IO (FunPtr CDestroy)
 
