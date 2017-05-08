@@ -11,7 +11,7 @@ import System.Fuse
 type HT = ()
 
 main :: IO ()
-main = fuseMain helloFSOps defaultExceptionHandler
+main = fM helloFSOps defaultExceptionHandler
 
 helloFSOps :: FuseOperations HT
 helloFSOps = defaultFuseOps { fuseGetFileStat = helloGetFileStat

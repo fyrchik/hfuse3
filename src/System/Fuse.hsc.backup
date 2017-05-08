@@ -3,7 +3,7 @@
 -- Module      :  System.Fuse
 -- Copyright   :  (c) Jérémy Bobbio, Taru Karttunen
 -- License     :  BSD-style
---
+-- 
 -- Maintainer  :  Montez Fitzpatrick
 -- Stability   :  experimental
 -- Portability :  GHC 6.4-7.8.2
@@ -62,6 +62,7 @@ import Foreign
 import Foreign.C
 import Foreign.C.Error
 import Foreign.Marshal
+import Foreign.StablePtr
 import System.Environment ( getProgName, getArgs )
 import System.IO ( hPutStrLn, stderr, withFile, stdin, stdout, IOMode(..) )
 import System.Posix.Types
@@ -85,15 +86,12 @@ import System.IO.Error (catch,ioeGetErrorString)
 
 #define FUSE_USE_VERSION 30
 
-#if defined MACFUSE || defined __FreeBSD__
-#include <sys/mount.h>
-#else
 #include <sys/statfs.h>
-#endif
 
 #include <dirent.h>
 #include <fuse.h>
-#include <fuse3/fuse_lowlevel.h> -- fuse_parse_cmdline
+#include <fuse3/fuse_lowlevel.h>
+#include <fuse3/fuse_opt.h>
 #include <fcntl.h>
 
 {- $intro
@@ -446,14 +444,17 @@ withFuseArgs :: String -> [String] -> (Ptr CFuseArgs -> IO b) -> IO b
 withFuseArgs prog args f =
     do let allArgs = (prog:args)
            argc = length allArgs
-       withMany withCString allArgs (\ cArgs ->
-           withArray cArgs $ (\ pArgv ->
-               allocaBytes (#size struct fuse_args) (\ fuseArgs ->
-                    do (#poke struct fuse_args, argc) fuseArgs argc
-                       (#poke struct fuse_args, argv) fuseArgs pArgv
-                       (#poke struct fuse_args, allocated) fuseArgs (0::CInt)
-                       finally (f fuseArgs)
-                               (fuse_opt_free_args fuseArgs))))
+       print prog
+       print args
+       withMany withCString allArgs (\ cArgs -> do
+           print cArgs
+           mapM (\s -> peekCString s >>= print) cArgs
+           withArray cArgs $ (\ pArgv -> do
+               fuseArgs <- callocBytes (#size struct fuse_args)
+               (#poke struct fuse_args, argc) fuseArgs argc
+               (#poke struct fuse_args, argv) fuseArgs pArgv
+               (#poke struct fuse_args, allocated) fuseArgs (0::CInt)
+               f fuseArgs))
 
 withStructFuse :: forall e fh b. Exception e
                => Ptr CFuseArgs
@@ -507,7 +508,9 @@ withStructFuse pArgs ops handler f =
       (#poke struct fuse_operations, flock)     pOps nullPtr
       (#poke struct fuse_operations, fallocate) pOps nullPtr
 
+      print 10
       structFuse <- fuse_new pArgs pOps (#size struct fuse_operations) nullPtr
+      print 11
       if structFuse == nullPtr
         then fail ""
         else E.finally (f structFuse)
@@ -742,18 +745,24 @@ defaultExceptionHandler e = hPutStrLn stderr (show e) >> return eFAULT
 -- TODO: refactor return type
 fuseParseCommandLine :: Ptr CFuseArgs -> IO (Maybe (Maybe String, Bool, Bool))
 fuseParseCommandLine pArgs = do
-    allocaBytes (#size struct fuse_cmdline_opts) $ \pOpts ->
-        do retval <- fuse_parse_cmdline pArgs pOpts
+           pOpts <- mallocBytes (#size struct fuse_cmdline_opts)
+           print "inside"
+           print pOpts
+           retval <- fuse_parse_cmdline pArgs pOpts
+           ps <- (#peek struct fuse_args, argv) pArgs >>= peekArray 4
+           mapM (\s -> peekCString s >>= print) (ps :: [Ptr CChar])
+           print retval
            if retval == 0
-               then do cMountPt <- (#peek struct fuse_cmdline_opts, mountpoint) pOpts
-                       mountPt  <- if cMountPt /= nullPtr
-                                     then do a <- peekCString cMountPt
-                                             free cMountPt
-                                             return $ Just a
-                                     else return $ Nothing
+               then do
+                      -- mountPt  <- if cMountPt /= nullPtr
+                      --              then do a <- peekCString cMountPt
+                      --                      free cMountPt
+                      --                      return $ Just a
+                      --              else return $ Nothing
+                       let mountPt = Just "/mnt/tmp"
                        singleThreaded <- (#peek struct fuse_cmdline_opts, singlethread) pOpts
                        foreground     <- (#peek struct fuse_cmdline_opts, foreground)   pOpts
-                       return $ Just (mountPt, (singleThreaded :: Int) == 0, (foreground :: Int) == 1)
+                       return $ Just (mountPt, (singleThreaded :: Int) == 1, (foreground :: Int) == 1)
                else return Nothing
 
 -- haskell version of daemon(2)
@@ -789,7 +798,9 @@ withSignalHandlers exitHandler f =
 fuseMainReal foreground ops handler pArgs mountPt =
     withCString mountPt (\cMountPt ->
       do withStructFuse pArgs ops handler (\pFuse -> do
+          print 3
           fuse_mount pFuse cMountPt
+          print 4
           E.finally
                (if foreground -- finally ready to fork
                  then changeWorkingDirectory "/" >> (procMain pFuse)
@@ -843,13 +854,19 @@ fuseMain ops handler = do
     -- lower-level fuse_new/fuse_loop_mt API.
     prog <- getProgName
     args <- getArgs
+    print "after opts"
     fuseRun prog args ops handler
 
 fuseRun :: String -> [String] -> Exception e => FuseOperations fh -> (e -> IO Errno) -> IO ()
 fuseRun prog args ops handler =
     catch
        (withFuseArgs prog args (\pArgs ->
-         do cmd <- fuseParseCommandLine pArgs
+         do k <- (#peek struct fuse_args, argc) pArgs
+            print (k :: CInt)
+            ps <- (#peek struct fuse_args, argv) pArgs >>= peekArray 2
+            mapM (\s -> peekCString s >>= print) (ps :: [Ptr CChar])
+            cmd <- fuseParseCommandLine pArgs
+            print 1
             case cmd of
               Nothing -> fail ""
               Just (Nothing, _, _) -> fail "Usage error: mount point required"
@@ -883,15 +900,17 @@ catch = catchIOError
 
 ---
 -- exported C called from Haskell
----
+---  
 
 data CFuseArgs -- struct fuse_args
 
 data CFuseChan -- struct fuse_chan
 foreign import ccall safe "fuse.h fuse_mount"
+--    fuse_mount :: CString -> Ptr CFuseArgs -> IO (Ptr CFuseChan)
     fuse_mount :: Ptr CStructFuse -> CString -> IO CInt
 
 foreign import ccall safe "fuse.h fuse_unmount"
+--    fuse_unmount :: CString -> Ptr CFuseChan -> IO ()
     fuse_unmount :: Ptr CStructFuse -> IO ()
 
 data CFuseSession -- struct fuse_session
@@ -984,6 +1003,13 @@ foreign import ccall safe "wrapper"
 type CTruncate = CString -> COff -> IO CInt
 foreign import ccall safe "wrapper"
     mkTruncate :: CTruncate -> IO (FunPtr CTruncate)
+
+#if FUSE_MAJOR_VERSION < 3
+data CUTimBuf -- struct utimbuf
+type CUTime = CString -> Ptr CUTimBuf -> IO CInt
+foreign import ccall safe "wrapper"
+    mkUTime :: CUTime -> IO (FunPtr CUTime)
+#endif
 
 type COpen = CString -> Ptr CFuseFileInfo -> IO CInt
 foreign import ccall safe "wrapper"
