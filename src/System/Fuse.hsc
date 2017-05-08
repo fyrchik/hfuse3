@@ -55,6 +55,7 @@ module System.Fuse
 import Prelude hiding ( Read )
 
 import System.Fuse.FuseOperations
+import System.Fuse.Types
 
 import Control.Monad
 import Control.Exception as E(Exception, handle, finally, SomeException)
@@ -110,85 +111,6 @@ Read and writes are done with Haskell 'ByteString' type.
 {-  All operations should return the negated error value (-errno) on
       error.
 -}
-
-{- FIXME: I don't know how to determine the alignment of struct stat without
- - making unportable assumptions about the order of elements within it.  Hence,
- - FileStat is not an instance of Storable.  But it should be, rather than this
- - next function existing!
- -}
-
-fileStatToCStat :: FileStat -> Ptr CStat -> IO ()
-fileStatToCStat stat pStat = do
-    let mode = (entryTypeToFileMode (statEntryType stat)
-             `unionFileModes`
-               (statFileMode stat `intersectFileModes` accessModes))
-    let block_count = (fromIntegral (statBlocks stat) :: (#type blkcnt_t))
-    (#poke struct stat, st_mode)   pStat mode
-    (#poke struct stat, st_nlink)  pStat (statLinkCount  stat)
-    (#poke struct stat, st_uid)    pStat (statFileOwner  stat)
-    (#poke struct stat, st_gid)    pStat (statFileGroup  stat)
-    (#poke struct stat, st_rdev)   pStat (statSpecialDeviceID stat)
-    (#poke struct stat, st_size)   pStat (statFileSize   stat)
-    (#poke struct stat, st_blocks) pStat block_count
-    (#poke struct stat, st_atime)  pStat (statAccessTime stat)
-    (#poke struct stat, st_mtime)  pStat (statModificationTime stat)
-    (#poke struct stat, st_ctime)  pStat (statStatusChangeTime stat)
-
-entryTypeToDT :: EntryType -> Int
-entryTypeToDT Unknown          = (#const DT_UNKNOWN)
-entryTypeToDT NamedPipe        = (#const DT_FIFO)
-entryTypeToDT CharacterSpecial = (#const DT_CHR)
-entryTypeToDT Directory        = (#const DT_DIR)
-entryTypeToDT BlockSpecial     = (#const DT_BLK)
-entryTypeToDT RegularFile      = (#const DT_REG)
-entryTypeToDT SymbolicLink     = (#const DT_LNK)
-entryTypeToDT Socket           = (#const DT_SOCK)
-
-fileTypeModes :: FileMode
-fileTypeModes = (#const S_IFMT)
-
-blockSpecialMode :: FileMode
-blockSpecialMode = (#const S_IFBLK)
-
-characterSpecialMode :: FileMode
-characterSpecialMode = (#const S_IFCHR)
-
-namedPipeMode :: FileMode
-namedPipeMode = (#const S_IFIFO)
-
-regularFileMode :: FileMode
-regularFileMode = (#const S_IFREG)
-
-directoryMode :: FileMode
-directoryMode = (#const S_IFDIR)
-
-symbolicLinkMode :: FileMode
-symbolicLinkMode = (#const S_IFLNK)
-
-socketMode :: FileMode
-socketMode = (#const S_IFSOCK)
-
--- | Converts an 'EntryType' into the corresponding POSIX 'FileMode'.
-entryTypeToFileMode :: EntryType -> FileMode
-entryTypeToFileMode Unknown          = 0
-entryTypeToFileMode NamedPipe        = namedPipeMode
-entryTypeToFileMode CharacterSpecial = characterSpecialMode
-entryTypeToFileMode Directory        = directoryMode
-entryTypeToFileMode BlockSpecial     = blockSpecialMode
-entryTypeToFileMode RegularFile      = regularFileMode
-entryTypeToFileMode SymbolicLink     = symbolicLinkMode
-entryTypeToFileMode Socket           = socketMode
-
-fileModeToEntryType :: FileMode -> EntryType
-fileModeToEntryType mode
-    | fileType == namedPipeMode        = NamedPipe
-    | fileType == characterSpecialMode = CharacterSpecial
-    | fileType == directoryMode        = Directory
-    | fileType == blockSpecialMode     = BlockSpecial
-    | fileType == regularFileMode      = RegularFile
-    | fileType == symbolicLinkMode     = SymbolicLink
-    | fileType == socketMode           = Socket
-    where fileType = mode .&. (#const S_IFMT)
 
 {-
     There is no create() operation, mknod() will be called for
@@ -994,7 +916,6 @@ foreign import ccall safe "fuse.h fuse_get_context"
 data CFuseFileInfo -- struct fuse_file_info
 data CFuseConnInfo -- struct fuse_conn_info
 
-data CStat -- struct stat
 type CGetAttr = CString -> Ptr CStat -> IO CInt
 foreign import ccall safe "wrapper"
     mkGetAttr :: CGetAttr -> IO (FunPtr CGetAttr)

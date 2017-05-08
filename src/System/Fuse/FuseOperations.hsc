@@ -5,7 +5,10 @@ module System.Fuse.FuseOperations
     , FuseOperations(..)
     , SyncType(..)
 
+    , CStat
+
     , defaultFuseOps
+    , fileStatToCStat
     ) where
 
 import System.Fuse.Types
@@ -18,6 +21,7 @@ import Foreign
 import Foreign.C
 import Foreign.C.Error
 import Foreign.Marshal
+import System.Posix.Files ( accessModes, intersectFileModes, unionFileModes )
 import System.Posix.Types
 import System.Posix.IO ( OpenMode, OpenFileFlags )
 import System.Exit
@@ -25,6 +29,7 @@ import System.Exit
 #define FUSE_USE_VERSION 30
 
 #include <fuse.h>
+#include <sys/statfs.h>
 
 -- | Used by 'fuseSynchronizeFile' and 'fuseSynchronizeDirectory'.
 data SyncType
@@ -53,8 +58,6 @@ data FileSystemStats = FileSystemStats
       -- ^ Maximum length of filenames. FUSE default is 255.
     }
 
-
-
 {- | Used by 'fuseGetFileStat'.  Corresponds to @struct stat@ from @stat.h@;
      @st_dev@, @st_ino@ and @st_blksize@ are omitted, since (from the libfuse
      documentation): \"the @st_dev@ and @st_blksize@ fields are ignored.  The
@@ -75,6 +78,32 @@ data FileStat = FileStat { statEntryType :: EntryType
                          , statStatusChangeTime :: EpochTime
                          }
     deriving Show
+
+{- FIXME: I don't know how to determine the alignment of struct stat without
+ - making unportable assumptions about the order of elements within it.  Hence,
+ - FileStat is not an instance of Storable.  But it should be, rather than this
+ - next function existing!
+ -}
+
+data CStat -- struct stat
+
+fileStatToCStat :: FileStat -> Ptr CStat -> IO ()
+fileStatToCStat stat pStat = do
+    let mode = (entryTypeToFileMode (statEntryType stat)
+             `unionFileModes`
+               (statFileMode stat `intersectFileModes` accessModes))
+    let block_count = (fromIntegral (statBlocks stat) :: (#type blkcnt_t))
+    (#poke struct stat, st_mode)   pStat mode
+    (#poke struct stat, st_nlink)  pStat (statLinkCount  stat)
+    (#poke struct stat, st_uid)    pStat (statFileOwner  stat)
+    (#poke struct stat, st_gid)    pStat (statFileGroup  stat)
+    (#poke struct stat, st_rdev)   pStat (statSpecialDeviceID stat)
+    (#poke struct stat, st_size)   pStat (statFileSize   stat)
+    (#poke struct stat, st_blocks) pStat block_count
+    (#poke struct stat, st_atime)  pStat (statAccessTime stat)
+    (#poke struct stat, st_mtime)  pStat (statModificationTime stat)
+    (#poke struct stat, st_ctime)  pStat (statStatusChangeTime stat)
+
 
 -- | This record, given to 'fuseMain', binds each required file system
 --   operations.
