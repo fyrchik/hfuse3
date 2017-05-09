@@ -30,27 +30,31 @@ module System.Fuse
 
       module Foreign.C.Error
     , module System.Fuse.FuseOpt
+
+      -- * Main functions
     , FuseOperations(..)
     , defaultFuseOps
-    , fuseMain -- :: FuseOperations fh -> (Exception -> IO Errno) -> IO ()
-    , fuseMainOpts -- :: Storable a  => FuseOperations fh -> (Exception -> IO Errno) -> [FuseOpt] -> IO ()
-    , fuseRun -- :: String -> [String] -> FuseOperations fh -> (Exception -> IO Errno) -> IO ()
+    , fuseMain -- :: Exception e => (FuseOptResult -> FuseOperations fh) -> (e -> IO Errno) -> [FuseOpt] -> IO ()
+    , fuseRun  -- :: Exception e => String -> [String] -> (FuseOptResult -> FuseOperations fh) -> (e -> IO Errno) -> [FuseOpt] -> IO ()
     , defaultExceptionHandler -- :: Exception -> IO Errno
+
       -- * Operations datatypes
     , FileStat(..)
     , EntryType(..)
     , FileSystemStats(..)
     , SyncType(..)
+
       -- * FUSE Context
     , getFuseContext -- :: IO FuseContext
     , FuseContext(fuseCtxUserID, fuseCtxGroupID, fuseCtxProcessID, fuseCtxPrivateData)
+
       -- * File modes
     , entryTypeToFileMode -- :: EntryType -> FileMode
     , fileModeToEntryType -- :: FileMode -> EntryType
     , OpenMode(..)
     , OpenFileFlags(..)
     , intersectFileModes -- :: FileMode
-    , unionFileModes -- :: FileMode
+    , unionFileModes     -- :: FileMode
     ) where
 
 import Prelude hiding ( Read )
@@ -90,9 +94,6 @@ import System.IO.Error (catch,ioeGetErrorString)
 #endif
 
 -- TODO: FileMode -> Permissions
--- TODO: Arguments !
--- TODO: implement binding to fuse_invalidate
--- TODO: bind fuse_*xattr
 
 #define FUSE_USE_VERSION 30
 
@@ -168,11 +169,9 @@ withStructFuse :: forall e fh b. Exception e
                -> (e -> IO Errno)
                -> (Ptr CStructFuse -> IO b)
                -> IO b
-withStructFuse = withStructFuseOpts nullPtr
-
-withStructFuseOpts pData pArgs ops handler f =
+withStructFuse pArgs ops handler f =
     withFuseOps ops handler $ \pOps -> do
-      structFuse <- fuse_new pArgs pOps (#size struct fuse_operations) pData
+      structFuse <- fuse_new pArgs pOps (#size struct fuse_operations) nullPtr
       if structFuse == nullPtr
         then fail ""
         else E.finally (f structFuse)
@@ -233,7 +232,7 @@ withSignalHandlers exitHandler f =
 
 
 -- Mounts the filesystem, forks, and then starts fuse
-fuseMainReal pData foreground ops handler pArgs mountPt =
+fuseMainReal foreground ops handler pArgs mountPt =
     withCString mountPt (\cMountPt ->
       withStructFuseOpts pData pArgs ops handler (\pFuse -> do
           fuse_mount pFuse cMountPt
@@ -260,21 +259,17 @@ fuseMainReal pData foreground ops handler pArgs mountPt =
                                       else exitFailure
                                     return ()
 
-
-foreign import ccall "fuse.h fuse_main_real"
-    fuse_main_real :: Int -> Ptr CString -> Ptr CFuseOperations -> CSize -> Ptr a -> IO Int
-
-fuse_main argc pArgv pOps p = fuse_main_real argc pArgv pOps (#size struct fuse_operations) p
-
-
 -- | Main function of FUSE.
 -- This is all that has to be called from the @main@ function. On top of
 -- the 'FuseOperations' record with filesystem implementation, you must give
 -- an exception handler converting Haskell exceptions to 'Errno'.
+-- @fOps@ is function returning 'FuseOperations' record
+-- based on result of parsing @opts@.
 --
 -- This function does the following:
 --
---   * parses command line options (@-d@, @-s@ and @-h@) ;
+--   * parses command line options (@-d@, @-s@ and @-h@) including
+--     those provided by the user (described as 'FuseOpt' record);
 --
 --   * passes all options after @--@ to the fusermount program ;
 --
@@ -290,42 +285,38 @@ fuse_main argc pArgv pOps p = fuse_main_real argc pArgv pOps (#size struct fuse_
 --   * registers the operations ;
 --
 --   * calls FUSE event loop.
-fuseMain :: Exception e => FuseOperations fh -> (e -> IO Errno) -> IO ()
-fuseMain ops handler = do
+fuseMain :: Exception e
+         => (FuseOptResult -> FuseOperations fh)
+         -> (e -> IO Errno)
+         -> [FuseOpt]
+         -> IO ()
+fuseMain fOps handler opts = do
     -- this used to be implemented using libfuse's fuse_main. Doing this will fork()
     -- from C behind the GHC runtime's back, which deadlocks in GHC 6.8.
     -- Instead, we reimplement fuse_main in Haskell using the forkProcess and the
     -- lower-level fuse_new/fuse_loop_mt API.
-    fuseMainOpts (const ops) handler []
-
-fuseMainOpts :: Exception e
-             => (FuseOptResult -> FuseOperations fh)
-             -> (e -> IO Errno)
-             -> [FuseOpt]
-             -> IO ()
-fuseMainOpts ops handler opts = do
     prog <- getProgName
     args <- getArgs
-    fuseRunOpts prog args ops handler opts
+    fuseRun prog args fOps handler opts
 
-fuseRun :: String -> [String] -> Exception e => FuseOperations fh -> (e -> IO Errno) -> IO ()
-fuseRun prog args ops handler = fuseRunOpts prog args (const ops) handler []
-
-fuseRunOpts :: String -> [String]
-            -> Exception e
-            => (FuseOptResult -> FuseOperations fh)
-            -> (e -> IO Errno)
-            -> [FuseOpt] -> IO ()
-fuseRunOpts prog args ops handler opts =
+fuseRun :: Exception e
+        => String -> [String]
+        -> (FuseOptResult -> FuseOperations fh)
+        -> (e -> IO Errno)
+        -> [FuseOpt] -> IO ()
+fuseRun prog args fOps handler opts =
     catch
       (withFuseArgs prog args (\pArgs -> do
             (res, ret) <- fuseOptParse pArgs opts
+
+            -- 'fuse_parse_cmdline' calls 'fuse_opt_parse' internally with 'fuse_helper_opts'
+            -- probably it will be better to stick with one parsing function for all cases
             cmd <- fuseParseCommandLine pArgs
             case cmd of
                 Nothing -> fail ""
                 Just (Nothing, _, _) -> fail "Usage error: mount point required"
                 Just (Just mountPt, _, foreground) -> do
-                    fuseMainReal nullPtr foreground (ops res) handler pArgs mountPt
+                    fuseMainReal foreground (ops res) handler pArgs mountPt
                     return ()))
       ((\errStr -> unless (null errStr) (putStrLn errStr) >> exitFailure) . ioeGetErrorString)
 
@@ -336,6 +327,12 @@ fuseRunOpts prog args ops handler opts =
 ---
 -- exported C called from Haskell
 ---
+
+foreign import ccall "fuse.h fuse_main_real"
+    fuse_main_real :: Int -> Ptr CString -> Ptr CFuseOperations -> CSize -> Ptr a -> IO Int
+
+-- convenient wrapper (defined as macro in libfuse
+fuse_main argc pArgv pOps p = fuse_main_real argc pArgv pOps (#size struct fuse_operations) p
 
 foreign import ccall safe "fuse.h fuse_mount"
     fuse_mount :: Ptr CStructFuse -> CString -> IO CInt

@@ -32,6 +32,9 @@ import System.Posix.Types
 import System.Posix.IO ( OpenMode(..), OpenFileFlags(..) )
 import System.Exit
 
+
+-- TODO: bind fuse_*xattr
+
 #define FUSE_USE_VERSION 30
 
 #include <fuse.h>
