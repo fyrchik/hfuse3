@@ -27,20 +27,19 @@ instance Storable Options where
     alignment _  = alignment (undefined :: CString)
     peek ptr = do
         let p = castPtr ptr :: Ptr CString
-        p1 <- peek p
-        p2 <- peek (p `plusPtr` sizeOf (nullPtr :: CString))
+        p1 <- peekElemOff p 0
+        p2 <- peekElemOff p 1
         return $ Options p1 p2
 
     poke ptr (Options n c) = do
         let p = castPtr ptr :: Ptr CString
-        poke p n
-        poke (p `plusPtr` sizeOf (nullPtr :: CString)) c
+        pokeElemOff p 0 n
+        pokeElemOff p 1 c
 
 main :: IO ()
-main = fuseMainRealOpts
-         [FuseOpt "--name" FuseOptString, FuseOpt "--contents" FuseOptString]
-         helloFSOps
-         defaultExceptionHandler
+main = fuseMainOpts helloFSOps defaultExceptionHandler
+           [ FuseOpt "--name" FuseOptString
+           , FuseOpt "--contents" FuseOptString]
 
 helloFSOps :: FuseOptResult -> FuseOperations HT
 helloFSOps userData =

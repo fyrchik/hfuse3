@@ -34,7 +34,6 @@ module System.Fuse
     , defaultFuseOps
     , fuseMain -- :: FuseOperations fh -> (Exception -> IO Errno) -> IO ()
     , fuseMainOpts -- :: Storable a  => FuseOperations fh -> (Exception -> IO Errno) -> [FuseOpt] -> IO ()
-    , fuseMainRealOpts
     , fuseRun -- :: String -> [String] -> FuseOperations fh -> (Exception -> IO Errno) -> IO ()
     , defaultExceptionHandler -- :: Exception -> IO Errno
       -- * Operations datatypes
