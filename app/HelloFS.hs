@@ -95,12 +95,11 @@ helloNameFromContext :: FuseContext -> IO B.ByteString
 helloNameFromContext ctx = do
     let pData = fuseCtxPrivateData ctx
     if pData == nullPtr
-      then print "lul" >> return helloString
-      else print "kek" >>
-           peek (castPtr pData :: Ptr Options) >>= \o ->
-           if contents o == nullPtr
-             then return helloString
-             else peekCString (contents o) >>= (return . B.pack)
+      then return helloString
+      else peek (castPtr pData :: Ptr Options) >>= \o ->
+             if contents o == nullPtr
+               then return helloString
+               else peekCString (contents o) >>= (return . B.pack)
 
 
 dirStat ctx = FileStat { statEntryType = Directory
