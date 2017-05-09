@@ -37,9 +37,10 @@ instance Storable Options where
         poke (p `plusPtr` sizeOf (nullPtr :: CString)) c
 
 main :: IO ()
-main = fuseMainOpts helloFSOps defaultExceptionHandler
-           [ FuseOpt "--name" FuseOptString
-           , FuseOpt "--contents" FuseOptString]
+main = fuseMainRealOpts
+         [FuseOpt "--name" FuseOptString, FuseOpt "--contents" FuseOptString]
+         helloFSOps
+         defaultExceptionHandler
 
 helloFSOps :: FuseOptResult -> FuseOperations HT
 helloFSOps userData =

@@ -9,7 +9,7 @@
 -- Portability :  GHC 6.4-7.8.2
 --
 -- A binding for the FUSE (Filesystem in USErspace) library
--- (<http://fuse.sourceforge.net/>), which allows filesystems to be implemented
+-- (<https://github.com/libfuse/libfuse>), which allows filesystems to be implemented
 -- as userspace processes.
 --
 -- The binding tries to follow as much as possible current Haskell POSIX
@@ -34,6 +34,7 @@ module System.Fuse
     , defaultFuseOps
     , fuseMain -- :: FuseOperations fh -> (Exception -> IO Errno) -> IO ()
     , fuseMainOpts -- :: Storable a  => FuseOperations fh -> (Exception -> IO Errno) -> [FuseOpt] -> IO ()
+    , fuseMainRealOpts
     , fuseRun -- :: String -> [String] -> FuseOperations fh -> (Exception -> IO Errno) -> IO ()
     , defaultExceptionHandler -- :: Exception -> IO Errno
       -- * Operations datatypes
@@ -130,6 +131,8 @@ data FuseContext = FuseContext
     , fuseCtxGroupID :: GroupID
     , fuseCtxProcessID :: ProcessID
     , fuseCtxPrivateData :: Ptr ()
+    -- ^ Pointer to private data that will be used by filesystem.
+    -- It can be allocated in 'fuseInit' and freed in 'fuseDestroy'.
     }
 
 -- | Returns the context of the program doing the current FUSE call.
@@ -250,19 +253,26 @@ fuseMainReal pData foreground ops handler pArgs mountPt =
                               -- recv() call to finish with EINTR when signals arrive.
                               -- This doesn't happen with GHC's signal handling in place.
                               pctx <- fuse_get_context
-                              withSignalHandlers (fuse_session_exit session) $
+                              withSignalHandlers (fuse_session_exit session >> fuse_unmount pFuse) $
                                  do retVal <- fuse_loop_mt pFuse 0
                                     -- TODO: add opt clone_fd ^
-                                    if retVal == 1 
+                                    if retVal == 1
                                       then exitSuccess
                                       else exitFailure
                                     return ()
+
+
+foreign import ccall "fuse.h fuse_main_real"
+    fuse_main_real :: Int -> Ptr CString -> Ptr CFuseOperations -> CSize -> Ptr a -> IO Int
+
+fuse_main argc pArgv pOps p = fuse_main_real argc pArgv pOps (#size struct fuse_operations) p
+
 
 -- | Main function of FUSE.
 -- This is all that has to be called from the @main@ function. On top of
 -- the 'FuseOperations' record with filesystem implementation, you must give
 -- an exception handler converting Haskell exceptions to 'Errno'.
--- 
+--
 -- This function does the following:
 --
 --   * parses command line options (@-d@, @-s@ and @-h@) ;
@@ -281,12 +291,6 @@ fuseMainReal pData foreground ops handler pArgs mountPt =
 --   * registers the operations ;
 --
 --   * calls FUSE event loop.
-
-foreign import ccall "fuse.h fuse_main_real"
-    fuse_main_real :: Int -> Ptr CString -> Ptr CFuseOperations -> CSize -> Ptr a -> IO Int
-
-fuse_main argc pArgv pOps p = fuse_main_real argc pArgv pOps (#size struct fuse_operations) p
-
 fuseMain :: Exception e => FuseOperations fh -> (e -> IO Errno) -> IO ()
 fuseMain ops handler = do
     -- this used to be implemented using libfuse's fuse_main. Doing this will fork()
