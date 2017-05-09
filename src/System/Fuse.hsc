@@ -234,7 +234,7 @@ withSignalHandlers exitHandler f =
 -- Mounts the filesystem, forks, and then starts fuse
 fuseMainReal foreground ops handler pArgs mountPt =
     withCString mountPt (\cMountPt ->
-      withStructFuseOpts pData pArgs ops handler (\pFuse -> do
+      withStructFuse pArgs ops handler (\pFuse -> do
           fuse_mount pFuse cMountPt
           pctx <- fuse_get_context
           E.finally
@@ -316,7 +316,7 @@ fuseRun prog args fOps handler opts =
                 Nothing -> fail ""
                 Just (Nothing, _, _) -> fail "Usage error: mount point required"
                 Just (Just mountPt, _, foreground) -> do
-                    fuseMainReal foreground (ops res) handler pArgs mountPt
+                    fuseMainReal foreground (fOps res) handler pArgs mountPt
                     return ()))
       ((\errStr -> unless (null errStr) (putStrLn errStr) >> exitFailure) . ioeGetErrorString)
 

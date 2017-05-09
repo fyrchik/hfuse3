@@ -37,7 +37,7 @@ instance Storable Options where
         pokeElemOff p 1 c
 
 main :: IO ()
-main = fuseMainOpts helloFSOps defaultExceptionHandler
+main = fuseMain helloFSOps defaultExceptionHandler
            [ FuseOpt "--name" FuseOptString
            , FuseOpt "--contents" FuseOptString]
 
